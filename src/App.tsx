@@ -9,7 +9,7 @@ function App() {
         Welcome to Performant Studio.
       </p>
       <Show when="signed-out">
-        <SignIn />
+        <SignIn routing="path" />
       </Show>
       <Show when="signed-in">
         <div className="flex flex-col items-center gap-4">
