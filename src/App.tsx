@@ -1,5 +1,5 @@
+import { Show, SignIn, UserButton } from '@clerk/react'
 import './App.css'
-import { Show, SignIn, UserButton } from '@clerk/react';
 
 function App() {
   return (
