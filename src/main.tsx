@@ -14,6 +14,8 @@ declare module '@tanstack/react-router' {
 
 const redirectOrigins = import.meta.env.VITE_ALLOWED_REDIRECT_ORIGINS?.split(',')
 
+console.log(redirectOrigins)
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ClerkProvider
