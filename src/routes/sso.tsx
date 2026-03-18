@@ -1,10 +1,9 @@
-function SSOPage() {
-  return (
-    <div className="p-2">
-      <h3>SSO Page</h3>
-      <p>Welcome to the SSO page.</p>
-    </div>
-  )
-}
+import { createRoute } from '@tanstack/react-router'
+import Sso from '../components/Sso'
+import { rootRoute } from './__root.tsx'
 
-export default SSOPage
+export const ssoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sso',
+  component: Sso,
+})
