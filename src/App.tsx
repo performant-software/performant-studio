@@ -1,4 +1,4 @@
-import { Show, SignIn, UserButton } from '@clerk/react'
+import { Show, UserButton } from '@clerk/react'
 import './App.css'
 
 function App() {
@@ -9,7 +9,7 @@ function App() {
         Welcome to Performant Studio.
       </p>
       <Show when="signed-out">
-        <SignIn />
+        <a href="/sign-in">Sign in</a>
       </Show>
       <Show when="signed-in">
         <div className="flex flex-col items-center gap-4">
