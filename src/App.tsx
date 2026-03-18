@@ -1,4 +1,4 @@
-import { Show, UserButton } from '@clerk/react'
+import { OrganizationSwitcher, Show, UserButton } from '@clerk/react'
 import './App.css'
 
 function App() {
@@ -17,6 +17,7 @@ function App() {
             Successfully Signed In
           </span>
           <UserButton />
+          <OrganizationSwitcher />
         </div>
       </Show>
     </div>
