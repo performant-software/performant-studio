@@ -44,7 +44,7 @@ function verifyDiscoursePayload(sso: string, sig: string, secret: string) {
   return { nonce, returnUrl }
 }
 
-function buildResponseUrl(returnUrl: string, fields: Record<string, string | undefined | null>, secret: string) {
+function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret: string) {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || value === null || value === '')
@@ -162,6 +162,7 @@ async function handler(req: Request) {
       name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
       avatar_url: user.imageUrl,
       groups: discourseConfig.roles[role],
+      admin: role === 'org:admin',
     },
     discourseConfig.secret,
   )
