@@ -6,7 +6,7 @@ import { createClerkClient } from '@clerk/backend'
 interface DiscourseConfig {
   domain: string
   secret: string
-  roles: Record<string, string>
+  roles?: Record<string, string>
 }
 
 const clerkClient = createClerkClient({
@@ -14,7 +14,7 @@ const clerkClient = createClerkClient({
 })
 
 function isDiscourseConfig(config: any): config is DiscourseConfig {
-  return !(!config || !config.secret || !config.roles || !config.domain)
+  return !(!config || !config.secret || !config.domain)
 }
 
 function errorResponse(message: string, status: number) {
@@ -161,7 +161,7 @@ async function handler(req: Request) {
       username: user.username ?? undefined,
       name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
       avatar_url: user.imageUrl,
-      groups: discourseConfig.roles[role],
+      groups: discourseConfig.roles ? discourseConfig.roles[role] : undefined,
       admin: role === 'org:admin',
     },
     discourseConfig.secret,
@@ -171,7 +171,7 @@ async function handler(req: Request) {
 }
 
 export const config: Config = {
-  path: '/discourse',
+  path: '/auth/discourse',
 }
 
 export default handler
