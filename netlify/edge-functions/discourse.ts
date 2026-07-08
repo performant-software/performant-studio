@@ -71,18 +71,16 @@ async function authenticate(req: Request): Promise<string | null> {
   console.log('request headers:')
   console.log(req.headers)
 
-  const { toAuth } = await clerkClient.authenticateRequest(req, {
+  const res = await clerkClient.authenticateRequest(req, {
     publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
   })
 
-  const auth = toAuth()
+  console.log(res)
+
+  const auth = res.toAuth()
   console.log('AUTH', auth)
 
-  if (!auth?.userId) {
-    return null
-  }
-
-  return auth.userId
+  return auth?.userId ?? null
 }
 
 async function handler(req: Request) {
