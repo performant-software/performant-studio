@@ -137,6 +137,9 @@ async function handler(req: Request) {
     (om.organization.privateMetadata.discourse as any)?.domain === referrerDomain
   ))
 
+  console.log('org memberships:')
+  console.log(orgMemberships)
+
   if (!match) {
     return errorResponse('No matching org found', 400)
   }
