@@ -99,7 +99,7 @@ async function handler(req: Request) {
   const userId = await authenticate(req)
 
   if (!userId) {
-    return Response.redirect(Netlify.env.get('CLERK_SIGN_IN_URL')!)
+    return Response.redirect('/')
   }
 
   const user = await clerkClient.users.getUser(userId)
