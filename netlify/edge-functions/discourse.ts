@@ -105,8 +105,7 @@ async function handler(req: Request) {
     return Response.redirect('/')
   }
 
-  console.log(`${primaryEmail}: Logging in`)
-
+  console.log(`${primaryEmail}: Fetching organization membership list`)
   const { data: orgMemberships } = await clerkClient.users.getOrganizationMembershipList({
     userId: user.id,
     limit: 100,
@@ -161,6 +160,8 @@ async function handler(req: Request) {
     },
     discourseConfig.secret,
   )
+
+  console.log(`${primaryEmail}: Successful login, redirecting to Discourse`)
 
   return Response.redirect(redirectUrl)
 }
