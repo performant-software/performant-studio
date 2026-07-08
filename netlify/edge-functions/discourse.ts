@@ -78,6 +78,8 @@ async function authenticate(req: Request): Promise<string | null> {
 async function handler(req: Request) {
   const referrer = req.headers.get('referer')
 
+  console.log('REFERRER', referrer)
+
   if (!referrer) {
     return errorResponse('Missing referrer', 400)
   }
