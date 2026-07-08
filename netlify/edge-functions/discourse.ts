@@ -111,6 +111,8 @@ async function handler(req: Request) {
     limit: 100,
   })
 
+  console.log('discourse domain:', discourseDomain)
+
   const match = orgMemberships.find(om => (
     (om.organization.privateMetadata.discourse as any)?.domain === discourseDomain
   ))
