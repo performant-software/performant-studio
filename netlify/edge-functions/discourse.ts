@@ -62,11 +62,15 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
 }
 
 async function authenticate(req: Request): Promise<string | null> {
+  console.log('publishable key:')
+  console.log(Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'))
+
   const { toAuth } = await clerkClient.authenticateRequest(req, {
     publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
   })
 
   const auth = toAuth()
+  console.log('AUTH', auth)
 
   if (!auth?.userId) {
     return null
@@ -101,6 +105,7 @@ async function handler(req: Request) {
   const userId = await authenticate(req)
 
   if (!userId) {
+    console.log('User not authenticated, redirecting to /')
     return Response.redirect('/')
   }
 
