@@ -61,43 +61,7 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
   return url.toString()
 }
 
-async function authenticate(req: Request): Promise<string | null> {
-  console.log('publishable key:')
-  console.log(Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'))
-
-  console.log('request cookies:')
-  console.log(req.headers.get('cookie'))
-
-  console.log('request headers:')
-  console.log(req.headers)
-
-  const res = await clerkClient.authenticateRequest(req, {
-    publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
-  })
-
-  console.log(res)
-
-  const auth = res.toAuth()
-  console.log('AUTH', auth)
-
-  return auth?.userId ?? null
-}
-
 async function handler(req: Request) {
-  const referrer = req.headers.get('referer')
-
-  console.log('REFERRER', referrer)
-
-  if (!referrer) {
-    return errorResponse('Missing referrer', 400)
-  }
-
-  const referrerDomain = new URL(referrer).hostname
-
-  if (!referrerDomain) {
-    return errorResponse('Missing referrer', 400)
-  }
-
   const url = new URL(req.url)
   const discourseSsoParam = url.searchParams.get('sso')
   const discourseSigParam = url.searchParams.get('sig')
@@ -106,14 +70,30 @@ async function handler(req: Request) {
     return errorResponse('Missing required params', 400)
   }
 
-  const userId = await authenticate(req)
+  const decoded = Buffer.from(discourseSsoParam, 'base64').toString('utf8')
+  const returnSsoUrl = new URLSearchParams(decoded).get('return_sso_url')
+  if (!returnSsoUrl) {
+    return errorResponse('Missing return_sso_url', 400)
+  }
 
-  if (!userId) {
+  const discourseDomain = new URL(returnSsoUrl).hostname
+
+  const authResponse = await clerkClient.authenticateRequest(req, {
+    publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
+  })
+
+  if (authResponse.status === 'handshake') {
+    return new Response(null, { status: 307, headers: authResponse.headers })
+  }
+
+  if (!authResponse?.isSignedIn) {
     console.log('User not authenticated, redirecting to /')
     return Response.redirect('/')
   }
 
-  const user = await clerkClient.users.getUser(userId)
+  const { toAuth } = authResponse
+
+  const user = await clerkClient.users.getUser(toAuth().userId)
 
   if (!user) {
     return errorResponse('User not found', 400)
@@ -127,12 +107,12 @@ async function handler(req: Request) {
   }
 
   const { data: orgMemberships } = await clerkClient.users.getOrganizationMembershipList({
-    userId,
+    userId: user.id,
     limit: 100,
   })
 
   const match = orgMemberships.find(om => (
-    (om.organization.privateMetadata.discourse as any)?.domain === referrerDomain
+    (om.organization.privateMetadata.discourse as any)?.domain === discourseDomain
   ))
 
   console.log('org memberships:')
@@ -170,7 +150,7 @@ async function handler(req: Request) {
     returnUrl,
     {
       nonce,
-      external_id: userId,
+      external_id: user.id,
       email: primaryEmail,
       username: user.username ?? undefined,
       name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
