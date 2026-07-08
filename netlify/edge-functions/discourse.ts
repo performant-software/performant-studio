@@ -65,6 +65,12 @@ async function authenticate(req: Request): Promise<string | null> {
   console.log('publishable key:')
   console.log(Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'))
 
+  console.log('request cookies:')
+  console.log(req.headers.get('cookie'))
+
+  console.log('request headers:')
+  console.log(req.headers)
+
   const { toAuth } = await clerkClient.authenticateRequest(req, {
     publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
   })
