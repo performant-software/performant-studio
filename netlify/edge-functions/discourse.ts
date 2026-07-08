@@ -19,13 +19,6 @@ function isDiscourseConfig(config: any): config is DiscourseConfig {
   return !(!config || !config.secret || !config.domain)
 }
 
-function errorResponse(message: string, status: number) {
-  return new Response(
-    JSON.stringify({ message }),
-    { status },
-  )
-}
-
 function verifyDiscoursePayload(sso: string, sig: string, secret: string) {
   const expected = crypto.createHmac('sha256', secret).update(sso).digest('hex')
 
@@ -69,13 +62,15 @@ async function handler(req: Request) {
   const discourseSigParam = url.searchParams.get('sig')
 
   if (!discourseSsoParam || !discourseSigParam) {
-    return errorResponse('Missing required params', 400)
+    console.log('Missing required params')
+    return Response.redirect('/')
   }
 
   const decoded = Buffer.from(discourseSsoParam, 'base64').toString('utf8')
   const returnSsoUrl = new URLSearchParams(decoded).get('return_sso_url')
   if (!returnSsoUrl) {
-    return errorResponse('Missing return_sso_url', 400)
+    console.log('Missing return_sso_url')
+    return Response.redirect('/')
   }
 
   const discourseDomain = new URL(returnSsoUrl).hostname
@@ -88,7 +83,7 @@ async function handler(req: Request) {
     return new Response(null, { status: 307, headers: authResponse.headers })
   }
 
-  if (!authResponse?.isSignedIn) {
+  if (!authResponse?.isAuthenticated) {
     console.log('User not authenticated, redirecting to homepage')
     return Response.redirect('/')
   }
@@ -98,14 +93,16 @@ async function handler(req: Request) {
   const user = await clerkClient.users.getUser(toAuth().userId)
 
   if (!user) {
-    return errorResponse('User not found', 400)
+    console.log('User not found')
+    return Response.redirect('/')
   }
 
   const primaryEmail = user.emailAddresses.find(
     e => e.id === user.primaryEmailAddressId,
   )?.emailAddress
   if (!primaryEmail) {
-    return errorResponse('User missing primary email address', 400)
+    console.log(`User ${user.id} missing primary email address`)
+    return Response.redirect('/')
   }
 
   console.log(`${primaryEmail}: Logging in`)
@@ -120,7 +117,8 @@ async function handler(req: Request) {
   ))
 
   if (!match) {
-    return errorResponse(`${primaryEmail}: No matching org found`, 400)
+    console.log(`${primaryEmail}: No matching org found`)
+    return Response.redirect('/')
   }
 
   const { organization, role } = match
@@ -128,7 +126,8 @@ async function handler(req: Request) {
   const discourseConfig = organization.privateMetadata.discourse
 
   if (!isDiscourseConfig(discourseConfig)) {
-    return errorResponse(`${primaryEmail}: Missing Discourse config in Clerk organization`, 400)
+    console.log(`${primaryEmail}: Missing Discourse config in Clerk organization`)
+    return Response.redirect('/')
   }
 
   let nonce: string
@@ -144,7 +143,8 @@ async function handler(req: Request) {
     returnUrl = payloadVerificationResult.returnUrl
   }
   catch {
-    return errorResponse(`${primaryEmail}: Invalid Discourse Connect payload`, 400)
+    console.log(`${primaryEmail}: Invalid Discourse Connect payload`)
+    return Response.redirect('/')
   }
 
   const redirectUrl = buildResponseUrl(
