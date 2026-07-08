@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 import type { Config } from '@netlify/edge-functions'
 import { Buffer } from 'node:buffer'
 import crypto from 'node:crypto'
@@ -87,7 +89,7 @@ async function handler(req: Request) {
   }
 
   if (!authResponse?.isSignedIn) {
-    console.log('User not authenticated, redirecting to /')
+    console.log('User not authenticated, redirecting to homepage')
     return Response.redirect('/')
   }
 
@@ -106,22 +108,19 @@ async function handler(req: Request) {
     return errorResponse('User missing primary email address', 400)
   }
 
+  console.log(`${primaryEmail}: Logging in`)
+
   const { data: orgMemberships } = await clerkClient.users.getOrganizationMembershipList({
     userId: user.id,
     limit: 100,
   })
 
-  console.log('discourse domain:', discourseDomain)
-
   const match = orgMemberships.find(om => (
     (om.organization.privateMetadata.discourse as any)?.domain === discourseDomain
   ))
 
-  console.log('org memberships:')
-  console.log(orgMemberships.map(om => om.organization.privateMetadata?.discourse))
-
   if (!match) {
-    return errorResponse('No matching org found', 400)
+    return errorResponse(`${primaryEmail}: No matching org found`, 400)
   }
 
   const { organization, role } = match
@@ -129,7 +128,7 @@ async function handler(req: Request) {
   const discourseConfig = organization.privateMetadata.discourse
 
   if (!isDiscourseConfig(discourseConfig)) {
-    return errorResponse('Missing Discourse config in Clerk organization', 400)
+    return errorResponse(`${primaryEmail}: Missing Discourse config in Clerk organization`, 400)
   }
 
   let nonce: string
@@ -145,7 +144,7 @@ async function handler(req: Request) {
     returnUrl = payloadVerificationResult.returnUrl
   }
   catch {
-    return errorResponse('Invalid Discourse Connect payload', 400)
+    return errorResponse(`${primaryEmail}: Invalid Discourse Connect payload`, 400)
   }
 
   const redirectUrl = buildResponseUrl(
