@@ -116,7 +116,7 @@ async function handler(req: Request) {
   ))
 
   console.log('org memberships:')
-  console.log(orgMemberships)
+  console.log(orgMemberships.map(om => om.organization.privateMetadata))
 
   if (!match) {
     return errorResponse('No matching org found', 400)
