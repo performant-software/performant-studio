@@ -171,7 +171,7 @@ async function handler(req: Request) {
 }
 
 export const config: Config = {
-  path: '/auth/discourse',
+  path: '/sso/discourse',
 }
 
 export default handler
