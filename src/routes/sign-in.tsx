@@ -4,6 +4,6 @@ import { rootRoute } from './__root'
 
 export const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/sign-in',
+  path: '/sign-in/$',
   component: SignIn,
 })
