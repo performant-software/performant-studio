@@ -58,19 +58,21 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
 
 async function handler(req: Request) {
   const url = new URL(req.url)
+  const homeUrl = new URL('/', url.origin).toString()
+
   const discourseSsoParam = url.searchParams.get('sso')
   const discourseSigParam = url.searchParams.get('sig')
 
   if (!discourseSsoParam || !discourseSigParam) {
     console.log('Missing required params')
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   const decoded = Buffer.from(discourseSsoParam, 'base64').toString('utf8')
   const returnSsoUrl = new URLSearchParams(decoded).get('return_sso_url')
   if (!returnSsoUrl) {
     console.log('Missing return_sso_url')
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   const discourseDomain = new URL(returnSsoUrl).hostname
@@ -85,7 +87,9 @@ async function handler(req: Request) {
 
   if (!authResponse?.isAuthenticated) {
     console.log('User not authenticated, redirecting to homepage')
-    return Response.redirect('/')
+    const signInUrl = new URL('/sign-in', url.origin)
+    signInUrl.searchParams.set('redirect_url', url.href)
+    return Response.redirect(signInUrl.toString())
   }
 
   const { toAuth } = authResponse
@@ -94,7 +98,7 @@ async function handler(req: Request) {
 
   if (!user) {
     console.log('User not found')
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   const primaryEmail = user.emailAddresses.find(
@@ -102,7 +106,7 @@ async function handler(req: Request) {
   )?.emailAddress
   if (!primaryEmail) {
     console.log(`User ${user.id} missing primary email address`)
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   console.log(`${primaryEmail}: Fetching organization membership list`)
@@ -117,7 +121,7 @@ async function handler(req: Request) {
 
   if (!match) {
     console.log(`${primaryEmail}: No matching org found`)
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   const { organization, role } = match
@@ -126,7 +130,7 @@ async function handler(req: Request) {
 
   if (!isDiscourseConfig(discourseConfig)) {
     console.log(`${primaryEmail}: Missing Discourse config in Clerk organization`)
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   let nonce: string
@@ -143,7 +147,7 @@ async function handler(req: Request) {
   }
   catch {
     console.log(`${primaryEmail}: Invalid Discourse Connect payload`)
-    return Response.redirect('/')
+    return Response.redirect(homeUrl)
   }
 
   const redirectUrl = buildResponseUrl(
