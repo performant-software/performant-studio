@@ -171,12 +171,3 @@ export const config: Config = {
 }
 
 export default handler
-
-/**
- * notes:
- *
- * 1. Discourse Connect data stored in org private metadata:
- *    - Discourse Connect secret key
- *    - Discourse Connect domain
- *    - mapping of Clerk roles to Discourse groups
- */
