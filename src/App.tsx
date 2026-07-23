@@ -1,8 +1,10 @@
 import { OrganizationSwitcher, Show } from '@clerk/react'
-import Redirect from './Redirect.tsx'
+import useRedirect from './hooks/useRedirect.ts'
 import './App.css'
 
 function App() {
+  useRedirect()
+
   return (
     <div className="h-full w-full grow flex flex-col items-center justify-evenly bg-gray-100 text-gray-900 p-4">
       <Show when="signed-out">
@@ -18,7 +20,6 @@ function App() {
         </div>
       </Show>
       <Show when="signed-in">
-        <Redirect />
         <div className="flex flex-col items-center gap-12">
           <h1 className="text-3xl font-bold">
             Welcome back
