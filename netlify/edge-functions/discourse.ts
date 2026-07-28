@@ -8,7 +8,6 @@ import { createClerkClient } from '@clerk/backend'
 interface DiscourseConfig {
   domain: string
   secret: string
-  roles?: Record<string, string>
 }
 
 const clerkClient = createClerkClient({
@@ -159,7 +158,6 @@ async function handler(req: Request) {
       username: user.username ?? undefined,
       name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
       avatar_url: user.imageUrl,
-      groups: discourseConfig.roles ? discourseConfig.roles[role] : undefined,
       admin: role === 'org:admin',
       moderator: role === 'org:moderator' || role === 'org:admin',
     },
