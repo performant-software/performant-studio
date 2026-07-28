@@ -161,6 +161,7 @@ async function handler(req: Request) {
       avatar_url: user.imageUrl,
       groups: discourseConfig.roles ? discourseConfig.roles[role] : undefined,
       admin: role === 'org:admin',
+      moderator: role === 'org:moderator' || role === 'org:admin',
     },
     discourseConfig.secret,
   )
