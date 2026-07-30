@@ -5,18 +5,21 @@ import { Buffer } from 'node:buffer'
 import crypto from 'node:crypto'
 import { createClerkClient } from '@clerk/backend'
 
-interface DiscourseConfig {
-  domain: string
-  secret: string
+interface PrivateMetadata {
+  discourse?: {
+    secret?: string
+  }
+}
+
+interface PublicMetadata {
+  discourse?: {
+    domain?: string
+  }
 }
 
 const clerkClient = createClerkClient({
   secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
 })
-
-function isDiscourseConfig(config: any): config is DiscourseConfig {
-  return !(!config || !config.secret || !config.domain)
-}
 
 function verifyDiscoursePayload(sso: string, sig: string, secret: string) {
   const expected = crypto.createHmac('sha256', secret).update(sso).digest('hex')
@@ -115,7 +118,7 @@ async function handler(req: Request) {
   })
 
   const match = orgMemberships.find(om => (
-    (om.organization.privateMetadata.discourse as any)?.domain === discourseDomain
+    (om.organization.publicMetadata?.discourse as any)?.domain === discourseDomain
   ))
 
   if (!match) {
@@ -123,11 +126,12 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
-  const { organization, role } = match
+  const privateMetadata = match.organization.publicMetadata as PrivateMetadata
+  const publicMetadata = match.organization.privateMetadata as PublicMetadata
 
-  const discourseConfig = organization.privateMetadata.discourse
+  const { role } = match
 
-  if (!isDiscourseConfig(discourseConfig)) {
+  if (!privateMetadata.discourse?.secret || !publicMetadata.discourse?.domain) {
     console.log(`${primaryEmail}: Missing Discourse config in Clerk organization`)
     return Response.redirect(homeUrl)
   }
@@ -139,7 +143,7 @@ async function handler(req: Request) {
     const payloadVerificationResult = verifyDiscoursePayload(
       discourseSsoParam,
       discourseSigParam,
-      discourseConfig.secret,
+      privateMetadata.discourse.secret,
     )
     nonce = payloadVerificationResult.nonce
     returnUrl = payloadVerificationResult.returnUrl
@@ -161,7 +165,7 @@ async function handler(req: Request) {
       admin: role === 'org:admin',
       moderator: role === 'org:moderator' || role === 'org:admin',
     },
-    discourseConfig.secret,
+    privateMetadata.discourse.secret,
   )
 
   console.log(`${primaryEmail}: Successful login, redirecting to Discourse`)

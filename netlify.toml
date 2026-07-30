@@ -1,0 +1,3 @@
+[dev]
+  # The port your frontend framework (e.g., Vite, Next.js, Astro) runs on
+  targetPort = 5173

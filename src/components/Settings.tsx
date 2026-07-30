@@ -1,6 +1,7 @@
 import { OrganizationSwitcher, Show, useOrganization } from '@clerk/react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
+import DiscourseGroups from './DiscourseGroups'
 
 const TABS = [
   { id: 'discourse', label: 'Discourse' },
@@ -10,7 +11,7 @@ type TabId = typeof TABS[number]['id']
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<TabId>('discourse')
-  const { isLoaded, membership } = useOrganization()
+  const { isLoaded, membership, organization } = useOrganization()
   const navigate = useNavigate()
 
   const isAdmin = membership?.role === 'org:admin'
@@ -63,6 +64,8 @@ export default function Settings() {
                 hidden={activeTab !== tab.id}
                 className="py-8"
               >
+                {/* Keyed by org so switching orgs resets any unsaved edits. */}
+                {tab.id === 'discourse' && <DiscourseGroups key={organization?.id} />}
               </div>
             ))}
           </section>
