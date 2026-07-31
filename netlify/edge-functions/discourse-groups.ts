@@ -3,6 +3,10 @@ import { createClerkClient } from '@clerk/backend'
 
 const MAX_GROUP_LENGTH = 100
 
+interface Group {
+  owners: string[]
+}
+
 const clerkClient = createClerkClient({
   secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
 })
@@ -11,11 +15,41 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status })
 }
 
-function normalizeGroups(input: string[]): string[] | { error: string } {
-  const names = new Set<string>()
+async function getMemberIds(organizationId: string) {
+  const ids = new Set<string>()
+  const limit = 500
 
-  for (const item of input) {
-    const name = item.trim()
+  for (let offset = 0; ; offset += limit) {
+    const { data, totalCount } = await clerkClient.organizations.getOrganizationMembershipList({
+      organizationId,
+      limit,
+      offset,
+    })
+
+    for (const membership of data) {
+      if (membership.publicUserData?.userId) {
+        ids.add(membership.publicUserData.userId)
+      }
+    }
+
+    if (!data.length || offset + data.length >= totalCount) {
+      return ids
+    }
+  }
+}
+
+function normalizeGroups(
+  input: unknown,
+  memberIds: Set<string>,
+): { groups: Record<string, Group> } | { error: string } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'groups must be an object keyed by group name' }
+  }
+
+  const groups = new Map<string, Group>()
+
+  for (const [rawName, value] of Object.entries(input as Record<string, unknown>)) {
+    const name = rawName.trim()
 
     if (!name) {
       return { error: 'group names cannot be empty' }
@@ -25,10 +59,34 @@ function normalizeGroups(input: string[]): string[] | { error: string } {
       return { error: `group names cannot be longer than ${MAX_GROUP_LENGTH} characters` }
     }
 
-    names.add(name)
+    if (groups.has(name)) {
+      return { error: `"${name}" is listed more than once` }
+    }
+
+    if (!value || typeof value !== 'object') {
+      return { error: `"${name}" must be an object` }
+    }
+
+    const { owners: rawOwners } = value as { owners?: unknown }
+
+    if (!Array.isArray(rawOwners)) {
+      return { error: `owners of "${name}" must be an array of user IDs` }
+    }
+
+    const owners = new Set<string>()
+
+    for (const userId of rawOwners) {
+      if (typeof userId !== 'string' || !memberIds.has(userId)) {
+        return { error: `owners of "${name}" contains a user who is not in this organization` }
+      }
+
+      owners.add(userId)
+    }
+
+    groups.set(name, { owners: [...owners] })
   }
 
-  return [...names]
+  return { groups: Object.fromEntries(groups) }
 }
 
 async function handler(req: Request) {
@@ -56,10 +114,10 @@ async function handler(req: Request) {
     return json({ error: 'Invalid JSON body' }, 400)
   }
 
-  const groups = normalizeGroups(body?.groups)
+  const result = normalizeGroups(body?.groups, await getMemberIds(orgId))
 
-  if (!Array.isArray(groups)) {
-    return json(groups, 400)
+  if ('error' in result) {
+    return json(result, 400)
   }
 
   const organization = await clerkClient.organizations.getOrganization({ organizationId: orgId })
@@ -69,12 +127,12 @@ async function handler(req: Request) {
       ...organization.publicMetadata,
       discourse: {
         ...organization.publicMetadata?.discourse,
-        groups,
+        groups: result.groups,
       },
     },
   })
 
-  return json({ groups: organizationAfterUpdate.publicMetadata?.discourse?.groups ?? [] })
+  return json({ groups: organizationAfterUpdate.publicMetadata?.discourse?.groups ?? {} })
 }
 
 export const config: Config = {

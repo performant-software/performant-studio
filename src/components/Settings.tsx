@@ -64,7 +64,6 @@ export default function Settings() {
                 hidden={activeTab !== tab.id}
                 className="py-8"
               >
-                {/* Keyed by org so switching orgs resets any unsaved edits. */}
                 {tab.id === 'discourse' && <DiscourseGroups key={organization?.id} />}
               </div>
             ))}
