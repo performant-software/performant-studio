@@ -1,13 +1,13 @@
 import type { Config } from '@netlify/edge-functions'
 import { createClerkClient } from '@clerk/backend'
 
-// Discourse's character limit for category names
+// Discourse's character limit for group display names
 const MAX_GROUP_LENGTH = 50
 
 // Discourse group name validation
 const MIN_DISCOURSE_NAME_LENGTH = 3
 const MAX_DISCOURSE_NAME_LENGTH = 20
-const MODERATORS_SUFFIX = '-moderators'
+const MODERATORS_SUFFIX = '-mods'
 const MODERATORS_LABEL = 'Moderators'
 const FULL_CATEGORY_PERMISSION = 1
 const DISCOURSE_API_USERNAME = 'system'
@@ -227,6 +227,20 @@ async function ensureCategory(
   return created.category.id as number
 }
 
+async function deleteGroup(config: DiscourseConfig, id: number) {
+  const path = `/admin/groups/${id}.json`
+  const { response, payload } = await discourseRequest(config, 'DELETE', path)
+
+  if (!response.ok && response.status !== 404) {
+    throw discourseError(path, response, payload)
+  }
+}
+
+async function deprovision(config: DiscourseConfig, records: DiscourseRecords) {
+  await deleteGroup(config, records.groupId)
+  await deleteGroup(config, records.moderatorsGroupId)
+}
+
 async function provision(config: DiscourseConfig, name: string): Promise<DiscourseRecords> {
   const slug = slugify(name)
 
@@ -299,20 +313,46 @@ async function handler(req: Request) {
   const savedGroups = organization.publicMetadata?.discourse?.groups ?? {}
   const newNames = Object.keys(result.groups).filter(name => !provisioned(savedGroups[name]))
 
+  const removals: { name: string, records: DiscourseRecords }[] = []
+
+  for (const [name, group] of Object.entries(savedGroups)) {
+    const records = provisioned(group)
+
+    if (records && !Object.hasOwn(result.groups, name)) {
+      removals.push({ name, records })
+    }
+  }
+
   for (const [name, group] of Object.entries(result.groups)) {
     Object.assign(group, provisioned(savedGroups[name]))
   }
 
   const failures: string[] = []
 
-  // Only groups that still need provisioning need Discourse credentials, so an
-  // org without them can go on editing the owners of groups it already has.
-  if (newNames.length) {
+  if (newNames.length || removals.length) {
     const { domain } = organization.publicMetadata?.discourse ?? {}
     const { apiKey } = organization.privateMetadata?.discourse ?? {}
 
     if (!domain || !apiKey) {
       return json({ error: 'This organization is not connected to a Discourse server' }, 400)
+    }
+
+    // Deleting before provisioning so that a group renamed into the same slug
+    // as one being removed provisions itself fresh instead of being deleted.
+    for (const { name, records } of removals) {
+      try {
+        await deprovision({ domain, apiKey }, records)
+      }
+      catch (deleteError) {
+        // Keep the group rather than losing track of one Discourse still has,
+        // so saving again retries the delete.
+        result.groups[name] = savedGroups[name]
+        failures.push(
+          deleteError instanceof Error
+            ? `Could not remove "${name}": ${deleteError.message}`
+            : `Could not remove "${name}"`,
+        )
+      }
     }
 
     for (const name of newNames) {

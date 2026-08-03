@@ -1,6 +1,7 @@
 import { useAuth, useOrganization } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiscourse } from '../lib/organizations.ts'
+import ConfirmDialog from './ConfirmDialog.tsx'
 
 type Groups = Record<string, DiscourseGroup>
 
@@ -42,6 +43,7 @@ export default function DiscourseGroups() {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   useEffect(() => {
     if (memberships?.hasNextPage && !memberships.isFetching) {
@@ -88,6 +90,7 @@ export default function DiscourseGroups() {
 
   const removeGroup = useCallback((name: string) => {
     setGroups(Object.fromEntries(Object.entries(groups).filter(([key]) => key !== name)))
+    setPendingDelete(null)
     setError(null)
   }, [groups])
 
@@ -172,7 +175,8 @@ export default function DiscourseGroups() {
                               <span className="text-[15px] font-semibold">{name}</span>
                               <button
                                 type="button"
-                                onClick={() => removeGroup(name)}
+                                onClick={() => setPendingDelete(name)}
+                                aria-label={`Delete ${name}`}
                                 className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600"
                               >
                                 Delete group
@@ -259,6 +263,24 @@ export default function DiscourseGroups() {
                   </button>
                 )}
               </div>
+
+              {!!pendingDelete && (
+                <ConfirmDialog
+                  title="Delete group"
+                  confirmLabel="Delete group"
+                  onConfirm={() => removeGroup(pendingDelete)}
+                  onDismiss={() => setPendingDelete(null)}
+                >
+                  <p>
+                    Are you sure you want to remove&nbsp;
+                    <strong className="font-semibold text-gray-900">{pendingDelete}</strong>
+                    ?
+                  </p>
+                  <p>
+                    Any existing posts in this group will be private. You can re-enable the group by creating one with the same name in the future.
+                  </p>
+                </ConfirmDialog>
+              )}
             </>
           )
         : <p>This organization is not connected to a Discourse server.</p>}
