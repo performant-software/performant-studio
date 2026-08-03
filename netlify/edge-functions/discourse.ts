@@ -5,18 +5,6 @@ import { Buffer } from 'node:buffer'
 import crypto from 'node:crypto'
 import { createClerkClient } from '@clerk/backend'
 
-interface PrivateMetadata {
-  discourse?: {
-    secret?: string
-  }
-}
-
-interface PublicMetadata {
-  discourse?: {
-    domain?: string
-  }
-}
-
 const clerkClient = createClerkClient({
   secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
 })
@@ -56,6 +44,22 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
   url.searchParams.set('sso', payload)
   url.searchParams.set('sig', sig)
   return url.toString()
+}
+
+function moderatorGroups(publicMetadata: OrganizationPublicMetadata, userId: string) {
+  const add: string[] = []
+  const remove: string[] = []
+
+  for (const group of Object.values(publicMetadata.discourse?.groups ?? {})) {
+    if (!group.moderatorsGroupName) {
+      continue
+    }
+
+    const target = group.owners.includes(userId) ? add : remove
+    target.push(group.moderatorsGroupName)
+  }
+
+  return { add, remove }
 }
 
 async function handler(req: Request) {
@@ -126,12 +130,11 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
-  const privateMetadata = match.organization.publicMetadata as PrivateMetadata
-  const publicMetadata = match.organization.privateMetadata as PublicMetadata
+  const { privateMetadata, publicMetadata } = match.organization
 
   const { role } = match
 
-  if (!privateMetadata.discourse?.secret || !publicMetadata.discourse?.domain) {
+  if (!privateMetadata.discourse?.secret || !publicMetadata?.discourse?.domain) {
     console.log(`${primaryEmail}: Missing Discourse config in Clerk organization`)
     return Response.redirect(homeUrl)
   }
@@ -153,6 +156,8 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
+  const { add, remove } = moderatorGroups(publicMetadata, user.id)
+
   const redirectUrl = buildResponseUrl(
     returnUrl,
     {
@@ -164,11 +169,16 @@ async function handler(req: Request) {
       avatar_url: user.imageUrl,
       admin: role === 'org:admin',
       moderator: role === 'org:moderator' || role === 'org:admin',
+      add_groups: add.join(','),
+      remove_groups: remove.join(','),
     },
     privateMetadata.discourse.secret,
   )
 
-  console.log(`${primaryEmail}: Successful login, redirecting to Discourse`)
+  console.log(
+    `${primaryEmail}: Successful login, redirecting to Discourse`
+    + `${add.length ? ` (moderates ${add.join(', ')})` : ''}`,
+  )
 
   return Response.redirect(redirectUrl)
 }

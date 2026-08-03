@@ -114,13 +114,14 @@ export default function DiscourseGroups() {
         const body = await response.json().catch(() => null)
         throw new Error(body?.error ?? `Could not save groups (${response.status}).`)
       }
-
-      await organization?.reload()
     }
     catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save groups.')
     }
     finally {
+      // Groups whose Discourse setup fails are left out of the save, so reload
+      // even on failure to show which ones actually made it.
+      await organization?.reload()
       setIsSaving(false)
     }
   }, [getToken, groups, organization])
