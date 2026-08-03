@@ -15,7 +15,7 @@ interface AppCardProps {
 export default function AppCard({ name, description, icon, links }: AppCardProps) {
   return (
     <article className="flex flex-col items-center rounded-xl bg-white p-8 text-center shadow-sm">
-      <span className="flex size-14 items-center justify-center rounded-xl text-white">
+      <span className="flex size-14 items-center justify-center rounded-xl">
         <img src={icon} alt={name} />
       </span>
       <h3 className="mt-4 text-xl font-semibold">{name}</h3>
