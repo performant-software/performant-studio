@@ -5,18 +5,9 @@ import { Buffer } from 'node:buffer'
 import crypto from 'node:crypto'
 import { createClerkClient } from '@clerk/backend'
 
-interface DiscourseConfig {
-  domain: string
-  secret: string
-}
-
 const clerkClient = createClerkClient({
   secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
 })
-
-function isDiscourseConfig(config: any): config is DiscourseConfig {
-  return !(!config || !config.secret || !config.domain)
-}
 
 function verifyDiscoursePayload(sso: string, sig: string, secret: string) {
   const expected = crypto.createHmac('sha256', secret).update(sso).digest('hex')
@@ -53,6 +44,22 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
   url.searchParams.set('sso', payload)
   url.searchParams.set('sig', sig)
   return url.toString()
+}
+
+function moderatorGroups(publicMetadata: OrganizationPublicMetadata, userId: string) {
+  const add: string[] = []
+  const remove: string[] = []
+
+  for (const group of Object.values(publicMetadata.discourse?.groups ?? {})) {
+    if (!group.moderatorsGroupName) {
+      continue
+    }
+
+    const target = group.owners.includes(userId) ? add : remove
+    target.push(group.moderatorsGroupName)
+  }
+
+  return { add, remove }
 }
 
 async function handler(req: Request) {
@@ -115,7 +122,7 @@ async function handler(req: Request) {
   })
 
   const match = orgMemberships.find(om => (
-    (om.organization.privateMetadata.discourse as any)?.domain === discourseDomain
+    (om.organization.publicMetadata?.discourse as any)?.domain === discourseDomain
   ))
 
   if (!match) {
@@ -123,11 +130,11 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
-  const { organization, role } = match
+  const { privateMetadata, publicMetadata } = match.organization
 
-  const discourseConfig = organization.privateMetadata.discourse
+  const { role } = match
 
-  if (!isDiscourseConfig(discourseConfig)) {
+  if (!privateMetadata.discourse?.secret || !publicMetadata?.discourse?.domain) {
     console.log(`${primaryEmail}: Missing Discourse config in Clerk organization`)
     return Response.redirect(homeUrl)
   }
@@ -139,7 +146,7 @@ async function handler(req: Request) {
     const payloadVerificationResult = verifyDiscoursePayload(
       discourseSsoParam,
       discourseSigParam,
-      discourseConfig.secret,
+      privateMetadata.discourse.secret,
     )
     nonce = payloadVerificationResult.nonce
     returnUrl = payloadVerificationResult.returnUrl
@@ -148,6 +155,8 @@ async function handler(req: Request) {
     console.log(`${primaryEmail}: Invalid Discourse Connect payload`)
     return Response.redirect(homeUrl)
   }
+
+  const { add, remove } = moderatorGroups(publicMetadata, user.id)
 
   const redirectUrl = buildResponseUrl(
     returnUrl,
@@ -160,11 +169,16 @@ async function handler(req: Request) {
       avatar_url: user.imageUrl,
       admin: role === 'org:admin',
       moderator: role === 'org:moderator' || role === 'org:admin',
+      add_groups: add.join(','),
+      remove_groups: remove.join(','),
     },
-    discourseConfig.secret,
+    privateMetadata.discourse.secret,
   )
 
-  console.log(`${primaryEmail}: Successful login, redirecting to Discourse`)
+  console.log(
+    `${primaryEmail}: Successful login, redirecting to Discourse`
+    + `${add.length ? ` (moderates ${add.join(', ')})` : ''}`,
+  )
 
   return Response.redirect(redirectUrl)
 }
