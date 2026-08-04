@@ -24,6 +24,12 @@ interface DiscourseRecords {
 
 type Group = DiscourseGroup & Partial<DiscourseRecords>
 
+interface DiscourseNames {
+  slug: string
+  groupName: string
+  moderatorsGroupName: string
+}
+
 interface DiscourseConfig {
   domain: string
   apiKey: string
@@ -130,6 +136,63 @@ function slugify(name: string) {
 
 function truncate(slug: string, length: number) {
   return slug.slice(0, length).replace(/-+$/, '')
+}
+
+function getNames(name: string): DiscourseNames | null {
+  const slug = slugify(name)
+
+  if (slug.length < MIN_DISCOURSE_NAME_LENGTH) {
+    return null
+  }
+
+  return {
+    slug,
+    groupName: truncate(slug, MAX_DISCOURSE_NAME_LENGTH),
+    moderatorsGroupName: truncate(slug, MAX_DISCOURSE_NAME_LENGTH - MODERATORS_SUFFIX.length) + MODERATORS_SUFFIX,
+  }
+}
+
+function resolveNames(
+  groups: Record<string, Group>,
+): { names: Record<string, DiscourseNames> } | { error: string } {
+  const names: Record<string, DiscourseNames> = {}
+  const claimedBy = new Map<string, string>()
+
+  for (const [name, group] of Object.entries(groups)) {
+    const calculated = getNames(name)
+
+    if (!calculated) {
+      return {
+        error: `"${name}" needs at least ${MIN_DISCOURSE_NAME_LENGTH} letters or numbers to name a Discourse group`,
+      }
+    }
+
+    // Groups Discourse already has keep the names they were provisioned with,
+    // so the rest are checked against those rather than a fresh derivation.
+    const records = provisioned(group)
+    const claims = [
+      records?.groupName ?? calculated.groupName,
+      records?.moderatorsGroupName ?? calculated.moderatorsGroupName,
+    ]
+
+    for (const claim of claims) {
+      const claimant = claimedBy.get(claim)
+
+      if (claimant) {
+        return {
+          error: `"${claimant}" and "${name}" would both use the Discourse group "${claim}". Give one of them a shorter or more distinct name.`,
+        }
+      }
+
+      claimedBy.set(claim, name)
+    }
+
+    if (!records) {
+      names[name] = calculated
+    }
+  }
+
+  return { names }
 }
 
 async function discourseRequest(
@@ -241,18 +304,11 @@ async function deprovision(config: DiscourseConfig, records: DiscourseRecords) {
   await deleteGroup(config, records.moderatorsGroupId)
 }
 
-async function provision(config: DiscourseConfig, name: string): Promise<DiscourseRecords> {
-  const slug = slugify(name)
-
-  if (slug.length < MIN_DISCOURSE_NAME_LENGTH) {
-    throw new Error(
-      `"${name}" needs at least ${MIN_DISCOURSE_NAME_LENGTH} letters or numbers to name a Discourse group`,
-    )
-  }
-
-  const groupName = truncate(slug, MAX_DISCOURSE_NAME_LENGTH)
-  const moderatorsGroupName = truncate(slug, MAX_DISCOURSE_NAME_LENGTH - MODERATORS_SUFFIX.length) + MODERATORS_SUFFIX
-
+async function provision(
+  config: DiscourseConfig,
+  name: string,
+  { slug, groupName, moderatorsGroupName }: DiscourseNames,
+): Promise<DiscourseRecords> {
   const groupId = await ensureGroup(config, groupName, name)
   const moderatorsGroupId = await ensureGroup(
     config,
@@ -260,17 +316,16 @@ async function provision(config: DiscourseConfig, name: string): Promise<Discour
     `${name} ${MODERATORS_LABEL}`,
   )
 
-  const categoryId = await ensureCategory(config, {
-    name,
-    slug,
-    permissions: {
-      [groupName]: FULL_CATEGORY_PERMISSION,
-      [moderatorsGroupName]: FULL_CATEGORY_PERMISSION,
-    },
-  })
+  const permissions = {
+    [groupName]: FULL_CATEGORY_PERMISSION,
+    [moderatorsGroupName]: FULL_CATEGORY_PERMISSION,
+  }
+
+  const categoryId = await ensureCategory(config, { name, slug, permissions })
 
   await send(config, 'PUT', `/categories/${categoryId}.json`, {
     name,
+    permissions,
     moderating_group_ids: [moderatorsGroupId],
   })
 
@@ -327,7 +382,14 @@ async function handler(req: Request) {
     Object.assign(group, provisioned(savedGroups[name]))
   }
 
+  const resolved = resolveNames(result.groups)
+
+  if ('error' in resolved) {
+    return json(resolved, 400)
+  }
+
   const failures: string[] = []
+  const stillTaken = new Map<string, string>()
 
   if (newNames.length || removals.length) {
     const { domain } = organization.publicMetadata?.discourse ?? {}
@@ -347,6 +409,8 @@ async function handler(req: Request) {
         // Keep the group rather than losing track of one Discourse still has,
         // so saving again retries the delete.
         result.groups[name] = savedGroups[name]
+        stillTaken.set(records.groupName, name)
+        stillTaken.set(records.moderatorsGroupName, name)
         failures.push(
           deleteError instanceof Error
             ? `Could not remove "${name}": ${deleteError.message}`
@@ -356,8 +420,17 @@ async function handler(req: Request) {
     }
 
     for (const name of newNames) {
+      const names = resolved.names[name]
+      const blockedBy = stillTaken.get(names.groupName) ?? stillTaken.get(names.moderatorsGroupName)
+
+      if (blockedBy) {
+        delete result.groups[name]
+        failures.push(`Could not set up "${name}" until "${blockedBy}" is removed from Discourse.`)
+        continue
+      }
+
       try {
-        Object.assign(result.groups[name], await provision({ domain, apiKey }, name))
+        Object.assign(result.groups[name], await provision({ domain, apiKey }, name, names))
       }
       catch (provisionError) {
         // Drop the group rather than storing one Discourse knows nothing about,
