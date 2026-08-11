@@ -6,17 +6,17 @@ import AppCard from './AppCard.tsx'
 const APPS = [
   {
     name: 'FairData',
-    description: 'Build and publish structured research data with people, places, works, and the relationships between them.',
+    description: 'Model, create and manage data about People, Places, Events, and relate them together.',
     icon: '/icons/fairdata.svg',
   },
   {
     name: 'FairCopy Cloud',
-    description: 'Transcribe and collaborate on TEI documents.',
+    description: 'Mark up your text documents with identifiers from FairData.',
     icon: '/icons/faircopy.svg',
   },
   {
     name: 'FairImage',
-    description: 'Host, tile, and serve high-resolution images and manifests over the IIIF APIs.',
+    description: 'Upload media and use them in IIIF manifests.',
     icon: '/icons/fairimage.svg',
   },
 ]
