@@ -10,7 +10,6 @@ const MAX_DISCOURSE_NAME_LENGTH = 20
 const MODERATORS_SUFFIX = '-mods'
 const MODERATORS_LABEL = 'Moderators'
 const FULL_CATEGORY_PERMISSION = 1
-const MEMBERS_VISIBILITY_LEVEL = 2
 const DISCOURSE_API_USERNAME = 'system'
 
 interface DiscourseRecords {
@@ -68,8 +67,8 @@ async function getMemberIds(organizationId: string) {
 }
 
 function normalizeGroups(
-    input: unknown,
-    memberIds: Set<string>,
+  input: unknown,
+  memberIds: Set<string>,
 ): { groups: Record<string, Group> } | { error: string } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { error: 'groups must be an object keyed by group name' }
@@ -122,17 +121,17 @@ function provisioned(group: Group | undefined): DiscourseRecords | null {
   const { groupId, groupName, moderatorsGroupId, moderatorsGroupName, categoryId } = group ?? {}
 
   return groupId && groupName && moderatorsGroupId && moderatorsGroupName && categoryId
-      ? { groupId, groupName, moderatorsGroupId, moderatorsGroupName, categoryId }
-      : null
+    ? { groupId, groupName, moderatorsGroupId, moderatorsGroupName, categoryId }
+    : null
 }
 
 function slugify(name: string) {
   return name
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036F]/g, '')
-      .replace(/[^a-z0-9]+/gi, '-')
-      .replace(/^-+|-+$/g, '')
-      .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036F]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
 }
 
 function truncate(slug: string, length: number) {
@@ -154,7 +153,7 @@ function getNames(name: string): DiscourseNames | null {
 }
 
 function resolveNames(
-    groups: Record<string, Group>,
+  groups: Record<string, Group>,
 ): { names: Record<string, DiscourseNames> } | { error: string } {
   const names: Record<string, DiscourseNames> = {}
   const claimedBy = new Map<string, string>()
@@ -197,10 +196,10 @@ function resolveNames(
 }
 
 async function discourseRequest(
-    { domain, apiKey }: DiscourseConfig,
-    method: string,
-    path: string,
-    body?: unknown,
+  { domain, apiKey }: DiscourseConfig,
+  method: string,
+  path: string,
+  body?: unknown,
 ) {
   const response = await fetch(`https://${domain}${path}`, {
     method,
@@ -230,8 +229,8 @@ async function discourseRequest(
 
 function discourseError(path: string, response: Response, payload: any) {
   const message = Array.isArray(payload?.errors)
-      ? payload.errors.join(' ')
-      : payload?.error ?? `responded ${response.status}`
+    ? payload.errors.join(' ')
+    : payload?.error ?? `responded ${response.status}`
 
   return new Error(`Discourse ${path} ${message}`)
 }
@@ -270,15 +269,15 @@ async function ensureGroup(config: DiscourseConfig, name: string, fullName: stri
   }
 
   const created = await send(config, 'POST', '/admin/groups.json', {
-    group: { name, full_name: fullName, visibility_level: MEMBERS_VISIBILITY_LEVEL },
+    group: { name, full_name: fullName },
   })
 
   return created.basic_group.id as number
 }
 
 async function ensureCategory(
-    config: DiscourseConfig,
-    { name, slug, permissions }: { name: string, slug: string, permissions: Record<string, number> },
+  config: DiscourseConfig,
+  { name, slug, permissions }: { name: string, slug: string, permissions: Record<string, number> },
 ) {
   const existing = await find(config, `/c/${encodeURIComponent(slug)}/find_by_slug.json`)
 
@@ -306,15 +305,15 @@ async function deprovision(config: DiscourseConfig, records: DiscourseRecords) {
 }
 
 async function provision(
-    config: DiscourseConfig,
-    name: string,
-    { slug, groupName, moderatorsGroupName }: DiscourseNames,
+  config: DiscourseConfig,
+  name: string,
+  { slug, groupName, moderatorsGroupName }: DiscourseNames,
 ): Promise<DiscourseRecords> {
   const groupId = await ensureGroup(config, groupName, name)
   const moderatorsGroupId = await ensureGroup(
-      config,
-      moderatorsGroupName,
-      `${name} ${MODERATORS_LABEL}`,
+    config,
+    moderatorsGroupName,
+    `${name} ${MODERATORS_LABEL}`,
   )
 
   const permissions = {
@@ -413,9 +412,9 @@ async function handler(req: Request) {
         stillTaken.set(records.groupName, name)
         stillTaken.set(records.moderatorsGroupName, name)
         failures.push(
-            deleteError instanceof Error
-                ? `Could not remove "${name}": ${deleteError.message}`
-                : `Could not remove "${name}"`,
+          deleteError instanceof Error
+            ? `Could not remove "${name}": ${deleteError.message}`
+            : `Could not remove "${name}"`,
         )
       }
     }
