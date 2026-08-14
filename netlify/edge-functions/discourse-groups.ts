@@ -10,6 +10,7 @@ const MAX_DISCOURSE_NAME_LENGTH = 20
 const MODERATORS_SUFFIX = '-mods'
 const MODERATORS_LABEL = 'Moderators'
 const FULL_CATEGORY_PERMISSION = 1
+const MEMBERS_VISIBILITY_LEVEL = 2
 const DISCOURSE_API_USERNAME = 'system'
 
 interface DiscourseRecords {
@@ -269,7 +270,7 @@ async function ensureGroup(config: DiscourseConfig, name: string, fullName: stri
   }
 
   const created = await send(config, 'POST', '/admin/groups.json', {
-    group: { name, full_name: fullName },
+    group: { name, full_name: fullName, visibility_level: MEMBERS_VISIBILITY_LEVEL },
   })
 
   return created.basic_group.id as number
