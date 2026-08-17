@@ -67,6 +67,28 @@ async function getMemberIds(organizationId: string) {
   }
 }
 
+function readUserIds(
+  raw: unknown,
+  memberIds: Set<string>,
+  label: string,
+): { ids: Set<string> } | { error: string } {
+  if (!Array.isArray(raw)) {
+    return { error: `${label} must be an array of user IDs` }
+  }
+
+  const ids = new Set<string>()
+
+  for (const userId of raw) {
+    if (typeof userId !== 'string' || !memberIds.has(userId)) {
+      return { error: `${label} contains a user who is not in this organization` }
+    }
+
+    ids.add(userId)
+  }
+
+  return { ids }
+}
+
 function normalizeGroups(
   input: unknown,
   memberIds: Set<string>,
@@ -96,23 +118,25 @@ function normalizeGroups(
       return { error: `"${name}" must be an object` }
     }
 
-    const { owners: rawOwners } = value as { owners?: unknown }
+    const { owners: rawOwners, members: rawMembers } = value as { owners?: unknown, members?: unknown }
 
-    if (!Array.isArray(rawOwners)) {
-      return { error: `owners of "${name}" must be an array of user IDs` }
+    const owners = readUserIds(rawOwners, memberIds, `owners of "${name}"`)
+
+    if ('error' in owners) {
+      return owners
     }
 
-    const owners = new Set<string>()
+    const members = readUserIds(rawMembers, memberIds, `members of "${name}"`)
 
-    for (const userId of rawOwners) {
-      if (typeof userId !== 'string' || !memberIds.has(userId)) {
-        return { error: `owners of "${name}" contains a user who is not in this organization` }
-      }
-
-      owners.add(userId)
+    if ('error' in members) {
+      return members
     }
 
-    groups.set(name, { owners: [...owners] })
+    groups.set(name, {
+      owners: [...owners.ids],
+      // Hide owners from the member list to prevent confusion
+      members: [...members.ids].filter(userId => !owners.ids.has(userId)),
+    })
   }
 
   return { groups: Object.fromEntries(groups) }

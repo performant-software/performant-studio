@@ -1,9 +1,9 @@
 export {}
 
 declare global {
-  /** Everything stored about a Discourse group, keyed by group name. */
   interface DiscourseGroup {
     owners: string[]
+    members: string[]
     groupId?: number
     groupName?: string
     moderatorsGroupId?: number

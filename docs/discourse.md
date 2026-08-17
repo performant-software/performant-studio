@@ -42,8 +42,6 @@ When you create a group in the Performant Studio UI, the `discourse-groups` edge
 1. Create a Discourse category by that name
 2. Create a Discourse group by that name
 3. Create a second Discourse group by that name plus "Moderators"
-4. Add the selected group owners to the moderators group
-5. Set the category to be private and viewable only by the groups from steps 1 and 2
-6. Sets the category to be moderated by the moderators group
-
-To make the membership list easier for group owners to manage, you will probably want to install https://github.com/performant-software/discourse-board-members.
+4. Add each member to the selected group(s)
+5. Set the category to be private and viewable only by the groups from steps 2 and 3
+6. Set the category to be moderated by the moderators group
