@@ -27,6 +27,14 @@ function fingerprint(groups: Groups) {
   )
 }
 
+function toUsers(userIds: string[], usersById: Map<string, User>): User[] {
+  return userIds.map(userId => usersById.get(userId) ?? {
+    userId,
+    name: `${userId} (not in this organization)`,
+    imageUrl: '',
+  })
+}
+
 function displayName(user: { firstName?: string | null, lastName?: string | null, identifier?: string } = {}) {
   const { firstName, lastName, identifier } = user
   const fullName = [firstName, lastName].filter(Boolean).join(' ')
@@ -171,8 +179,8 @@ export default function DiscourseGroups() {
                   type="text"
                   value={draft}
                   onChange={event => setDraft(event.target.value)}
-                  placeholder="Group name"
-                  aria-label="Group name"
+                  placeholder="New group name"
+                  aria-label="New group name"
                   className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
                 />
                 <button
@@ -209,9 +217,8 @@ export default function DiscourseGroups() {
                                 group={name}
                                 label="Owners"
                                 singular="owner"
-                                userIds={owners}
+                                users={toUsers(owners, usersById)}
                                 available={users.filter(user => !owners.includes(user.userId))}
-                                usersById={usersById}
                                 onChange={userIds => setOwners(name, userIds)}
                               />
                             </div>
@@ -220,11 +227,10 @@ export default function DiscourseGroups() {
                               group={name}
                               label="Members"
                               singular="member"
-                              userIds={members}
+                              users={toUsers(members, usersById)}
                               available={users.filter(
                                 user => !members.includes(user.userId) && !owners.includes(user.userId),
                               )}
-                              usersById={usersById}
                               onChange={userIds => setMembers(name, userIds)}
                             />
                           </li>

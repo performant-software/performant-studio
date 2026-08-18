@@ -34,7 +34,7 @@ export default function AppGrid() {
     }
 
     if (orgStatus.membership?.role === 'org:admin') {
-      result.push({ label: 'Manage groups', href: '/settings' })
+      result.push({ label: 'Manage groups', href: '/discourse' })
     }
 
     return result
