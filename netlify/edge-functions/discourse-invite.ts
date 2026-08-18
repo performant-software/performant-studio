@@ -63,7 +63,6 @@ async function handler(req: Request) {
   const isNewUser = !user
 
   if (!user) {
-    // Only creating an account needs a name, so an existing user can go without.
     if (!firstName || !lastName) {
       return json({ error: `${email} has no account yet, so a first and last name are required.` }, 400)
     }

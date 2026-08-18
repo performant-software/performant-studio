@@ -104,7 +104,7 @@ export default function DiscourseGroupInvite({ group, onInvited, onDismiss }: Di
         <div className="flex flex-col gap-1">
           <h2 id={titleId} className="text-lg font-semibold">Invite someone new</h2>
           <p className="text-[15px] text-gray-600">
-            Creates an account if they do not have one yet, then adds them to&nbsp;
+            Invite a new user and add them to&nbsp;
             <strong className="font-semibold text-gray-900">{group}</strong>
             .
           </p>
