@@ -368,9 +368,9 @@ async function handler(req: Request) {
 
   // The org comes from the session token rather than the request body so an
   // admin of one org cannot edit another org's groups.
-  const { orgId, orgRole } = authResponse.toAuth()
+  const { orgId, orgRole, userId } = authResponse.toAuth()
 
-  if (!orgId || orgRole !== 'org:admin') {
+  if (!orgId) {
     return json({ error: 'Forbidden' }, 403)
   }
 
@@ -382,15 +382,48 @@ async function handler(req: Request) {
     return json({ error: 'Invalid JSON body' }, 400)
   }
 
+  const organization = await clerkClient.organizations.getOrganization({ organizationId: orgId })
+
+  const savedGroups = organization.publicMetadata?.discourse?.groups ?? {}
+
+  const isAdmin = orgRole === 'org:admin'
+  const owned = new Set(
+    Object.entries(savedGroups)
+      .filter(([, group]) => group.owners.includes(userId))
+      .map(([name]) => name),
+  )
+
+  if (!isAdmin && !owned.size) {
+    return json({ error: 'Forbidden' }, 403)
+  }
+
   const result = normalizeGroups(body?.groups, await getMemberIds(orgId))
 
   if ('error' in result) {
     return json(result, 400)
   }
 
-  const organization = await clerkClient.organizations.getOrganization({ organizationId: orgId })
+  if (!isAdmin) {
+    const notOwned = Object.keys(result.groups).find(name => !owned.has(name))
 
-  const savedGroups = organization.publicMetadata?.discourse?.groups ?? {}
+    if (notOwned) {
+      return json({ error: `You are not an owner of "${notOwned}"` }, 403)
+    }
+
+    const submitted = result.groups
+
+    result.groups = { ...savedGroups }
+
+    for (const [name, group] of Object.entries(submitted)) {
+      const saved = savedGroups[name]
+
+      result.groups[name] = {
+        ...saved,
+        members: group.members.filter(memberId => !saved.owners.includes(memberId)),
+      }
+    }
+  }
+
   const newNames = Object.keys(result.groups).filter(name => !provisioned(savedGroups[name]))
 
   const removals: { name: string, records: DiscourseRecords }[] = []
@@ -424,15 +457,11 @@ async function handler(req: Request) {
       return json({ error: 'This organization is not connected to a Discourse server' }, 400)
     }
 
-    // Deleting before provisioning so that a group renamed into the same slug
-    // as one being removed provisions itself fresh instead of being deleted.
     for (const { name, records } of removals) {
       try {
         await deprovision({ domain, apiKey }, records)
       }
       catch (deleteError) {
-        // Keep the group rather than losing track of one Discourse still has,
-        // so saving again retries the delete.
         result.groups[name] = savedGroups[name]
         stillTaken.set(records.groupName, name)
         stillTaken.set(records.moderatorsGroupName, name)
@@ -458,8 +487,6 @@ async function handler(req: Request) {
         Object.assign(result.groups[name], await provision({ domain, apiKey }, name, names))
       }
       catch (provisionError) {
-        // Drop the group rather than storing one Discourse knows nothing about,
-        // so saving again retries it from scratch.
         delete result.groups[name]
         failures.push(provisionError instanceof Error ? provisionError.message : `Could not set up "${name}"`)
       }

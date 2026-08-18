@@ -13,6 +13,7 @@ interface DiscourseGroupRosterProps {
   users: User[]
   available: User[]
   onChange: (userIds: string[]) => void
+  readOnly?: boolean
 }
 
 export default function DiscourseGroupRoster({
@@ -22,6 +23,7 @@ export default function DiscourseGroupRoster({
   users,
   available,
   onChange,
+  readOnly = false,
 }: DiscourseGroupRosterProps) {
   const selectId = `${group}-${singular}`
 
@@ -32,20 +34,22 @@ export default function DiscourseGroupRoster({
       <label htmlFor={selectId} className="font-semibold text-gray-700">
         {label}
       </label>
-      <select
-        id={selectId}
-        value=""
-        disabled={!available.length}
-        onChange={event => onChange([...userIds, event.target.value])}
-        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <option value="" disabled>
-          {available.length ? `Add ${singular}…` : 'Everyone added'}
-        </option>
-        {available.map(user => (
-          <option key={user.userId} value={user.userId}>{user.name}</option>
-        ))}
-      </select>
+      {!readOnly && (
+        <select
+          id={selectId}
+          value=""
+          disabled={!available.length}
+          onChange={event => onChange([...userIds, event.target.value])}
+          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="" disabled>
+            {available.length ? `Add ${singular}…` : 'Everyone added'}
+          </option>
+          {available.map(user => (
+            <option key={user.userId} value={user.userId}>{user.name}</option>
+          ))}
+        </select>
+      )}
 
       {users.length
         ? (
@@ -61,14 +65,16 @@ export default function DiscourseGroupRoster({
                         {user.name}
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onChange(userIds.filter(id => id !== user.userId))}
-                      aria-label={`Remove ${user.name} from ${label.toLowerCase()} of ${group}`}
-                      className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
-                    >
-                      Remove
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onChange(userIds.filter(id => id !== user.userId))}
+                        aria-label={`Remove ${user.name} from ${label.toLowerCase()} of ${group}`}
+                        className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </li>
                 )
               })}

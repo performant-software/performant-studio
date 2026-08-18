@@ -1,6 +1,7 @@
 import type { AppCardLink } from './AppCard.tsx'
-import { useOrganization } from '@clerk/react'
+import { useOrganization, useUser } from '@clerk/react'
 import { useMemo } from 'react'
+import { ownedGroupNames } from '../lib/organizations.ts'
 import AppCard from './AppCard.tsx'
 
 const APPS = [
@@ -23,22 +24,32 @@ const APPS = [
 
 export default function AppGrid() {
   const orgStatus = useOrganization()
+  const { user } = useUser()
 
-  const domain = orgStatus.organization?.publicMetadata?.discourse?.domain
+  const discourseDomain = orgStatus.organization?.publicMetadata?.discourse?.domain
+
+  const canManageGroups = useMemo(() => {
+    if (!discourseDomain) {
+      return false
+    }
+
+    return orgStatus.membership?.role === 'org:admin'
+      || ownedGroupNames(orgStatus.organization, user?.id).length > 0
+  }, [discourseDomain, orgStatus.membership?.role, orgStatus.organization, user?.id])
 
   const discourseLinks: AppCardLink[] = useMemo(() => {
     const result: AppCardLink[] = []
 
-    if (domain) {
-      result.push({ label: 'Open', href: `https://${domain}` })
+    if (discourseDomain) {
+      result.push({ label: 'Open', href: `https://${discourseDomain}` })
     }
 
-    if (orgStatus.membership?.role === 'org:admin') {
+    if (canManageGroups) {
       result.push({ label: 'Manage groups', href: '/discourse' })
     }
 
     return result
-  }, [domain, orgStatus.membership?.role])
+  }, [canManageGroups, discourseDomain])
 
   return (
     <section>
@@ -47,7 +58,7 @@ export default function AppGrid() {
         {APPS.map(app => (
           <AppCard key={app.name} {...app} />
         ))}
-        {domain && (
+        {discourseDomain && (
           <AppCard
             name="Discourse"
             description="Discuss your work with your team and community in a forum that shares your Performant Studio sign-in."

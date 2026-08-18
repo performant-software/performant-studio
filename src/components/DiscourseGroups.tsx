@@ -1,7 +1,7 @@
 import type { User } from './DiscourseGroupRoster.tsx'
-import { useAuth, useOrganization } from '@clerk/react'
+import { useAuth, useOrganization, useUser } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isDiscourse } from '../lib/organizations.ts'
+import { isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
 import ConfirmDialog from './ConfirmDialog.tsx'
 import DiscourseGroupRoster from './DiscourseGroupRoster.tsx'
 
@@ -47,15 +47,25 @@ function displayName(user: { firstName?: string | null, lastName?: string | null
 }
 
 export default function DiscourseGroups() {
-  const { organization, memberships } = useOrganization({
+  const { organization, membership, memberships } = useOrganization({
     memberships: { infinite: true, keepPreviousData: true, pageSize: 100 },
   })
   const { getToken } = useAuth()
+  const { user } = useUser()
 
-  const savedGroups = useMemo(
-    () => toGroups(organization?.publicMetadata?.discourse?.groups),
-    [organization?.publicMetadata],
-  )
+  const isAdmin = membership?.role === 'org:admin'
+
+  const savedGroups = useMemo(() => {
+    const saved = toGroups(organization?.publicMetadata?.discourse?.groups)
+
+    if (isAdmin) {
+      return saved
+    }
+
+    const owned = new Set(ownedGroupNames(organization, user?.id))
+
+    return Object.fromEntries(Object.entries(saved).filter(([name]) => owned.has(name)))
+  }, [isAdmin, organization, user?.id])
 
   const [groups, setGroups] = useState<Groups>(savedGroups)
   const [draft, setDraft] = useState('')
@@ -170,27 +180,31 @@ export default function DiscourseGroups() {
               <div>
                 <h2 className="text-lg font-semibold">Groups</h2>
                 <p className="mt-1 text-[15px] text-gray-600">
-                  Add and manage communities for your organization's Discourse site.
+                  {isAdmin
+                    ? 'Add and manage communities for your organization\'s Discourse site.'
+                    : 'Manage the members of the communities you own.'}
                 </p>
               </div>
 
-              <form onSubmit={addGroup} className="flex flex-wrap justify-end items-center gap-3">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={event => setDraft(event.target.value)}
-                  placeholder="New group name"
-                  aria-label="New group name"
-                  className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
-                />
-                <button
-                  type="submit"
-                  disabled={!draft.trim()}
-                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Add new group
-                </button>
-              </form>
+              {isAdmin && (
+                <form onSubmit={addGroup} className="flex flex-wrap justify-end items-center gap-3">
+                  <input
+                    type="text"
+                    value={draft}
+                    onChange={event => setDraft(event.target.value)}
+                    placeholder="New group name"
+                    aria-label="New group name"
+                    className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!draft.trim()}
+                    className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Add new group
+                  </button>
+                </form>
+              )}
 
               {groupNames.length
                 ? (
@@ -202,14 +216,16 @@ export default function DiscourseGroups() {
                           <li key={name} className="flex flex-col gap-5 rounded-xl bg-white px-5 py-4 shadow-sm">
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-xl font-semibold">{name}</span>
-                              <button
-                                type="button"
-                                onClick={() => setPendingDelete(name)}
-                                aria-label={`Delete ${name}`}
-                                className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
-                              >
-                                Delete group
-                              </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDelete(name)}
+                                  aria-label={`Delete ${name}`}
+                                  className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
+                                >
+                                  Delete group
+                                </button>
+                              )}
                             </div>
 
                             <div className="bg-gray-100 p-4 rounded-md">
@@ -218,8 +234,9 @@ export default function DiscourseGroups() {
                                 label="Owners"
                                 singular="owner"
                                 users={toUsers(owners, usersById)}
-                                available={users.filter(user => !owners.includes(user.userId))}
+                                available={users.filter(candidate => !owners.includes(candidate.userId))}
                                 onChange={userIds => setOwners(name, userIds)}
+                                readOnly={!isAdmin}
                               />
                             </div>
 
@@ -229,7 +246,8 @@ export default function DiscourseGroups() {
                               singular="member"
                               users={toUsers(members, usersById)}
                               available={users.filter(
-                                user => !members.includes(user.userId) && !owners.includes(user.userId),
+                                candidate => !members.includes(candidate.userId)
+                                  && !owners.includes(candidate.userId),
                               )}
                               onChange={userIds => setMembers(name, userIds)}
                             />
@@ -240,7 +258,7 @@ export default function DiscourseGroups() {
                   )
                 : (
                     <p className="rounded-xl bg-white px-5 py-8 text-center text-[15px] text-gray-600 shadow-sm">
-                      No groups yet. Add one above.
+                      {isAdmin ? 'No groups yet. Add one above.' : 'You do not own any groups.'}
                     </p>
                   )}
 

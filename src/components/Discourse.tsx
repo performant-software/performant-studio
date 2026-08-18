@@ -1,21 +1,26 @@
-import { OrganizationSwitcher, Show, useOrganization } from '@clerk/react'
+import { OrganizationSwitcher, Show, useOrganization, useUser } from '@clerk/react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
+import { ownedGroupNames } from '../lib/organizations.ts'
 import DiscourseGroups from './DiscourseGroups'
 
 export default function Discourse() {
   const { isLoaded, membership, organization } = useOrganization()
+  const { isLoaded: isUserLoaded, user } = useUser()
   const navigate = useNavigate()
 
-  const isAdmin = membership?.role === 'org:admin'
+  const canManage = membership?.role === 'org:admin'
+    || ownedGroupNames(organization, user?.id).length > 0
+
+  const isReady = isLoaded && isUserLoaded
 
   useEffect(() => {
-    if (isLoaded && !isAdmin) {
+    if (isReady && !canManage) {
       void navigate({ to: '/', replace: true })
     }
-  }, [isAdmin, isLoaded, navigate])
+  }, [canManage, isReady, navigate])
 
-  if (!isLoaded || !isAdmin) {
+  if (!isReady || !canManage) {
     return null
   }
 
