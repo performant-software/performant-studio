@@ -3,6 +3,7 @@ import { useAuth, useOrganization, useUser } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
 import ConfirmDialog from './ConfirmDialog.tsx'
+import DiscourseGroupInvite from './DiscourseGroupInvite.tsx'
 import DiscourseGroupRoster from './DiscourseGroupRoster.tsx'
 
 type Groups = Record<string, DiscourseGroup>
@@ -15,6 +16,18 @@ function toGroups(saved: Groups | undefined): Groups {
       members: [...group.members],
     }]),
   )
+}
+
+function visibleGroups(organization: any, userId: string | undefined, isAdmin: boolean): Groups {
+  const saved = toGroups(organization?.publicMetadata?.discourse?.groups)
+
+  if (isAdmin) {
+    return saved
+  }
+
+  const owned = new Set(ownedGroupNames(organization, userId))
+
+  return Object.fromEntries(Object.entries(saved).filter(([name]) => owned.has(name)))
 }
 
 function fingerprint(groups: Groups) {
@@ -55,23 +68,17 @@ export default function DiscourseGroups() {
 
   const isAdmin = membership?.role === 'org:admin'
 
-  const savedGroups = useMemo(() => {
-    const saved = toGroups(organization?.publicMetadata?.discourse?.groups)
-
-    if (isAdmin) {
-      return saved
-    }
-
-    const owned = new Set(ownedGroupNames(organization, user?.id))
-
-    return Object.fromEntries(Object.entries(saved).filter(([name]) => owned.has(name)))
-  }, [isAdmin, organization, user?.id])
+  const savedGroups = useMemo(
+    () => visibleGroups(organization, user?.id, isAdmin),
+    [isAdmin, organization, user?.id],
+  )
 
   const [groups, setGroups] = useState<Groups>(savedGroups)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null)
 
   useEffect(() => {
     if (memberships?.hasNextPage && !memberships.isFetching) {
@@ -170,6 +177,17 @@ export default function DiscourseGroups() {
     }
   }, [getToken, groups, organization])
 
+  const refresh = useCallback(async () => {
+    const [reloaded] = await Promise.all([
+      organization?.reload(),
+      memberships?.revalidate?.(),
+    ])
+
+    if (reloaded) {
+      setGroups(visibleGroups(reloaded, user?.id, isAdmin))
+    }
+  }, [isAdmin, memberships, organization, user?.id])
+
   const groupNames = useMemo(() => Object.keys(groups), [groups])
 
   return (
@@ -251,6 +269,22 @@ export default function DiscourseGroups() {
                               )}
                               onChange={userIds => setMembers(name, userIds)}
                             />
+
+                            <div className="flex flex-wrap items-center justify-end gap-3">
+                              {isDirty && (
+                                <span className="text-sm text-gray-600">
+                                  Save or discard your changes before inviting someone.
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setPendingInvite(name)}
+                                disabled={isDirty || isSaving}
+                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Invite someone new
+                              </button>
+                            </div>
                           </li>
                         )
                       })}
@@ -286,6 +320,14 @@ export default function DiscourseGroups() {
                   {isSaving ? 'Saving…' : 'Save changes'}
                 </button>
               </div>
+
+              {!!pendingInvite && (
+                <DiscourseGroupInvite
+                  group={pendingInvite}
+                  onInvited={refresh}
+                  onDismiss={() => setPendingInvite(null)}
+                />
+              )}
 
               {!!pendingDelete && (
                 <ConfirmDialog

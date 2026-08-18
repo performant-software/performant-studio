@@ -1,5 +1,5 @@
 import type { Config } from '@netlify/edge-functions'
-import { createClerkClient } from '@clerk/backend'
+import { authorize, clerkClient, json, saveGroups } from '../lib/discourse.ts'
 
 // Discourse's character limit for group display names
 const MAX_GROUP_LENGTH = 50
@@ -34,14 +34,6 @@ interface DiscourseNames {
 interface DiscourseConfig {
   domain: string
   apiKey: string
-}
-
-const clerkClient = createClerkClient({
-  secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
-})
-
-function json(body: unknown, status = 200) {
-  return Response.json(body, { status })
 }
 
 async function getMemberIds(organizationId: string) {
@@ -358,21 +350,13 @@ async function provision(
 }
 
 async function handler(req: Request) {
-  const authResponse = await clerkClient.authenticateRequest(req, {
-    publishableKey: Netlify.env.get('VITE_CLERK_PUBLISHABLE_KEY'),
-  })
+  const caller = await authorize(req)
 
-  if (!authResponse.isAuthenticated) {
-    return json({ error: 'Unauthorized' }, 401)
+  if (caller instanceof Response) {
+    return caller
   }
 
-  // The org comes from the session token rather than the request body so an
-  // admin of one org cannot edit another org's groups.
-  const { orgId, orgRole, userId } = authResponse.toAuth()
-
-  if (!orgId) {
-    return json({ error: 'Forbidden' }, 403)
-  }
+  const { orgId, isAdmin, organization, savedGroups, owned } = caller
 
   let body: any
   try {
@@ -380,21 +364,6 @@ async function handler(req: Request) {
   }
   catch {
     return json({ error: 'Invalid JSON body' }, 400)
-  }
-
-  const organization = await clerkClient.organizations.getOrganization({ organizationId: orgId })
-
-  const savedGroups = organization.publicMetadata?.discourse?.groups ?? {}
-
-  const isAdmin = orgRole === 'org:admin'
-  const owned = new Set(
-    Object.entries(savedGroups)
-      .filter(([, group]) => group.owners.includes(userId))
-      .map(([name]) => name),
-  )
-
-  if (!isAdmin && !owned.size) {
-    return json({ error: 'Forbidden' }, 403)
   }
 
   const result = normalizeGroups(body?.groups, await getMemberIds(orgId))
@@ -493,17 +462,7 @@ async function handler(req: Request) {
     }
   }
 
-  const organizationAfterUpdate = await clerkClient.organizations.replaceOrganizationMetadata(orgId, {
-    publicMetadata: {
-      ...organization.publicMetadata,
-      discourse: {
-        ...organization.publicMetadata?.discourse,
-        groups: result.groups,
-      },
-    },
-  })
-
-  const groups = organizationAfterUpdate.publicMetadata?.discourse?.groups ?? {}
+  const groups = await saveGroups(caller, result.groups)
 
   if (failures.length) {
     return json({ error: failures.join(' '), groups }, 502)
