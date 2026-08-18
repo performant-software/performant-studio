@@ -46,17 +46,21 @@ function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret
   return url.toString()
 }
 
-function moderatorGroups(publicMetadata: OrganizationPublicMetadata, userId: string) {
+function syncedGroups(publicMetadata: OrganizationPublicMetadata, userId: string) {
   const add: string[] = []
   const remove: string[] = []
+  const sync = (name: string, belongs: boolean) => (belongs ? add : remove).push(name)
 
   for (const group of Object.values(publicMetadata.discourse?.groups ?? {})) {
-    if (!group.moderatorsGroupName) {
+    if (!group.groupName || !group.moderatorsGroupName) {
       continue
     }
 
-    const target = group.owners.includes(userId) ? add : remove
-    target.push(group.moderatorsGroupName)
+    const isOwner = group.owners.includes(userId)
+
+    // Add owner to the regular member group too
+    sync(group.groupName, isOwner || group.members.includes(userId))
+    sync(group.moderatorsGroupName, isOwner)
   }
 
   return { add, remove }
@@ -156,7 +160,7 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
-  const { add, remove } = moderatorGroups(publicMetadata, user.id)
+  const { add, remove } = syncedGroups(publicMetadata, user.id)
 
   const redirectUrl = buildResponseUrl(
     returnUrl,
@@ -177,7 +181,7 @@ async function handler(req: Request) {
 
   console.log(
     `${primaryEmail}: Successful login, redirecting to Discourse`
-    + `${add.length ? ` (moderates ${add.join(', ')})` : ''}`,
+    + `${add.length ? ` (in groups ${add.join(', ')})` : ''}`,
   )
 
   return Response.redirect(redirectUrl)

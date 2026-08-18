@@ -1,20 +1,51 @@
-import { useAuth, useOrganization } from '@clerk/react'
+import type { User } from './DiscourseGroupRoster.tsx'
+import { useAuth, useOrganization, useUser } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isDiscourse } from '../lib/organizations.ts'
+import { isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
 import ConfirmDialog from './ConfirmDialog.tsx'
+import DiscourseGroupInvite from './DiscourseGroupInvite.tsx'
+import DiscourseGroupRoster from './DiscourseGroupRoster.tsx'
 
 type Groups = Record<string, DiscourseGroup>
 
 function toGroups(saved: Groups | undefined): Groups {
   return Object.fromEntries(
-    Object.entries(saved ?? {}).map(([name, group]) => [name, { ...group, owners: [...group.owners] }]),
+    Object.entries(saved ?? {}).map(([name, group]) => [name, {
+      ...group,
+      owners: [...group.owners],
+      members: [...group.members],
+    }]),
   )
+}
+
+function visibleGroups(organization: any, userId: string | undefined, isAdmin: boolean): Groups {
+  const saved = toGroups(organization?.publicMetadata?.discourse?.groups)
+
+  if (isAdmin) {
+    return saved
+  }
+
+  const owned = new Set(ownedGroupNames(organization, userId))
+
+  return Object.fromEntries(Object.entries(saved).filter(([name]) => owned.has(name)))
 }
 
 function fingerprint(groups: Groups) {
   return JSON.stringify(
-    Object.keys(groups).sort().map(name => [name, [...groups[name].owners].sort()]),
+    Object.keys(groups).sort().map(name => [
+      name,
+      [...groups[name].owners].sort(),
+      [...groups[name].members].sort(),
+    ]),
   )
+}
+
+function toUsers(userIds: string[], usersById: Map<string, User>): User[] {
+  return userIds.map(userId => usersById.get(userId) ?? {
+    userId,
+    name: `${userId} (not in this organization)`,
+    imageUrl: '',
+  })
 }
 
 function displayName(user: { firstName?: string | null, lastName?: string | null, identifier?: string } = {}) {
@@ -29,14 +60,17 @@ function displayName(user: { firstName?: string | null, lastName?: string | null
 }
 
 export default function DiscourseGroups() {
-  const { organization, memberships } = useOrganization({
+  const { organization, membership, memberships } = useOrganization({
     memberships: { infinite: true, keepPreviousData: true, pageSize: 100 },
   })
   const { getToken } = useAuth()
+  const { user } = useUser()
+
+  const isAdmin = membership?.role === 'org:admin'
 
   const savedGroups = useMemo(
-    () => toGroups(organization?.publicMetadata?.discourse?.groups),
-    [organization?.publicMetadata],
+    () => visibleGroups(organization, user?.id, isAdmin),
+    [isAdmin, organization, user?.id],
   )
 
   const [groups, setGroups] = useState<Groups>(savedGroups)
@@ -44,6 +78,7 @@ export default function DiscourseGroups() {
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null)
 
   useEffect(() => {
     if (memberships?.hasNextPage && !memberships.isFetching) {
@@ -56,14 +91,15 @@ export default function DiscourseGroups() {
       .map(membership => ({
         userId: membership.publicUserData?.userId,
         name: displayName(membership.publicUserData),
+        imageUrl: membership.publicUserData?.imageUrl ?? '',
       }))
-      .filter((user): user is { userId: string, name: string } => Boolean(user.userId))
+      .filter((user): user is User => Boolean(user.userId))
       .sort((a, b) => a.name.localeCompare(b.name)),
     [memberships?.data],
   )
 
   const usersById = useMemo(
-    () => new Map(users.map(user => [user.userId, user.name])),
+    () => new Map(users.map(user => [user.userId, user])),
     [users],
   )
 
@@ -83,7 +119,7 @@ export default function DiscourseGroups() {
       return
     }
 
-    setGroups({ ...groups, [name]: { owners: [] } })
+    setGroups({ ...groups, [name]: { owners: [], members: [] } })
     setDraft('')
     setError(null)
   }, [draft, groups])
@@ -95,7 +131,19 @@ export default function DiscourseGroups() {
   }, [groups])
 
   const setOwners = useCallback((name: string, userIds: string[]) => {
-    setGroups({ ...groups, [name]: { ...groups[name], owners: userIds } })
+    setGroups({
+      ...groups,
+      [name]: {
+        ...groups[name],
+        owners: userIds,
+        members: groups[name].members.filter(userId => !userIds.includes(userId)),
+      },
+    })
+    setError(null)
+  }, [groups])
+
+  const setMembers = useCallback((name: string, userIds: string[]) => {
+    setGroups({ ...groups, [name]: { ...groups[name], members: userIds } })
     setError(null)
   }, [groups])
 
@@ -129,6 +177,17 @@ export default function DiscourseGroups() {
     }
   }, [getToken, groups, organization])
 
+  const refresh = useCallback(async () => {
+    const [reloaded] = await Promise.all([
+      organization?.reload(),
+      memberships?.revalidate?.(),
+    ])
+
+    if (reloaded) {
+      setGroups(visibleGroups(reloaded, user?.id, isAdmin))
+    }
+  }, [isAdmin, memberships, organization, user?.id])
+
   const groupNames = useMemo(() => Object.keys(groups), [groups])
 
   return (
@@ -139,94 +198,92 @@ export default function DiscourseGroups() {
               <div>
                 <h2 className="text-lg font-semibold">Groups</h2>
                 <p className="mt-1 text-[15px] text-gray-600">
-                  Manage the list of Discourse groups for this organization, and who owns each one.
+                  {isAdmin
+                    ? 'Add and manage communities for your organization\'s Discourse site.'
+                    : 'Manage the members of the communities you own.'}
                 </p>
               </div>
 
-              <form onSubmit={addGroup} className="flex flex-wrap items-center gap-3">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={event => setDraft(event.target.value)}
-                  placeholder="Group name"
-                  aria-label="Group name"
-                  className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
-                />
-                <button
-                  type="submit"
-                  disabled={!draft.trim()}
-                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </form>
+              {isAdmin && (
+                <form onSubmit={addGroup} className="flex flex-wrap justify-end items-center gap-3">
+                  <input
+                    type="text"
+                    value={draft}
+                    onChange={event => setDraft(event.target.value)}
+                    placeholder="New group name"
+                    aria-label="New group name"
+                    className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!draft.trim()}
+                    className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Add new group
+                  </button>
+                </form>
+              )}
 
               {groupNames.length
                 ? (
                     <ul className="flex flex-col gap-4">
                       {groupNames.map((name) => {
-                        const { owners } = groups[name]
-                        const available = users.filter(user => !owners.includes(user.userId))
-                        const selectId = `${name}-owners`
+                        const { owners, members } = groups[name]
 
                         return (
                           <li key={name} className="flex flex-col gap-5 rounded-xl bg-white px-5 py-4 shadow-sm">
                             <div className="flex items-center justify-between gap-4">
-                              <span className="text-[15px] font-semibold">{name}</span>
-                              <button
-                                type="button"
-                                onClick={() => setPendingDelete(name)}
-                                aria-label={`Delete ${name}`}
-                                className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600"
-                              >
-                                Delete group
-                              </button>
+                              <span className="text-xl font-semibold">{name}</span>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDelete(name)}
+                                  aria-label={`Delete ${name}`}
+                                  className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
+                                >
+                                  Delete group
+                                </button>
+                              )}
                             </div>
 
-                            <div className="flex flex-col gap-2">
-                              <label htmlFor={selectId} className="text-sm font-semibold text-gray-700">
-                                Owners
-                              </label>
-                              <select
-                                id={selectId}
-                                value=""
-                                disabled={!available.length}
-                                onChange={event => setOwners(name, [...owners, event.target.value])}
-                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant disabled:cursor-not-allowed disabled:opacity-50"
+                            <div className="bg-gray-100 p-4 rounded-md">
+                              <DiscourseGroupRoster
+                                group={name}
+                                label="Owners"
+                                singular="owner"
+                                users={toUsers(owners, usersById)}
+                                available={users.filter(candidate => !owners.includes(candidate.userId))}
+                                onChange={userIds => setOwners(name, userIds)}
+                                readOnly={!isAdmin}
+                              />
+                            </div>
+
+                            <DiscourseGroupRoster
+                              group={name}
+                              label="Members"
+                              singular="member"
+                              users={toUsers(members, usersById)}
+                              available={users.filter(
+                                candidate => !members.includes(candidate.userId)
+                                  && !owners.includes(candidate.userId),
+                              )}
+                              onChange={userIds => setMembers(name, userIds)}
+                            />
+
+                            <div className="flex flex-wrap items-center justify-end gap-3">
+                              {isDirty && (
+                                <span className="text-sm text-gray-600">
+                                  Save or discard your changes before inviting someone.
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setPendingInvite(name)}
+                                disabled={isDirty || isSaving}
+                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                <option value="" disabled>
-                                  {available.length ? 'Add owner…' : 'Everyone added'}
-                                </option>
-                                {available.map(user => (
-                                  <option key={user.userId} value={user.userId}>{user.name}</option>
-                                ))}
-                              </select>
-
-                              {owners.length
-                                ? (
-                                    <ul className="flex flex-col gap-1">
-                                      {owners.map(userId => (
-                                        <li key={userId} className="flex items-center justify-between gap-3 text-[15px]">
-                                          <span className={usersById.has(userId) ? undefined : 'text-gray-500 italic'}>
-                                            {usersById.get(userId) ?? `${userId} (not in this organization)`}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() => setOwners(name, owners.filter(id => id !== userId))}
-                                            aria-label={`Remove ${usersById.get(userId) ?? userId} from owners of ${name}`}
-                                            className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600"
-                                          >
-                                            Remove
-                                          </button>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )
-                                : <p className="text-sm text-gray-600">No owners yet.</p>}
-
-                              <p className="text-sm text-gray-500">
-                                Owners will be able to manage members via Discourse.
-                              </p>
+                                Invite someone new
+                              </button>
                             </div>
                           </li>
                         )
@@ -235,21 +292,13 @@ export default function DiscourseGroups() {
                   )
                 : (
                     <p className="rounded-xl bg-white px-5 py-8 text-center text-[15px] text-gray-600 shadow-sm">
-                      No groups yet. Add one above.
+                      {isAdmin ? 'No groups yet. Add one above.' : 'You do not own any groups.'}
                     </p>
                   )}
 
               {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
 
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={!isDirty || isSaving}
-                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? 'Saving…' : 'Save changes'}
-                </button>
+              <div className="flex w-full justify-end items-center gap-4">
                 {isDirty && !isSaving && (
                   <button
                     type="button"
@@ -262,7 +311,23 @@ export default function DiscourseGroups() {
                     Discard changes
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  disabled={!isDirty || isSaving}
+                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving…' : 'Save changes'}
+                </button>
               </div>
+
+              {!!pendingInvite && (
+                <DiscourseGroupInvite
+                  group={pendingInvite}
+                  onInvited={refresh}
+                  onDismiss={() => setPendingInvite(null)}
+                />
+              )}
 
               {!!pendingDelete && (
                 <ConfirmDialog
