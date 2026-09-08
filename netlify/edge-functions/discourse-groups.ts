@@ -1,5 +1,6 @@
 import type { Config } from '@netlify/edge-functions'
-import { authorize, clerkClient, json, saveGroups } from '../lib/discourse.ts'
+import type { DiscourseConfig } from '../lib/discourse.ts'
+import { authorize, clerkClient, discourseError, discourseRequest, find, json, saveGroups, send, syncGroups } from '../lib/discourse.ts'
 
 // Discourse's character limit for group display names
 const MAX_GROUP_LENGTH = 50
@@ -11,7 +12,6 @@ const MODERATORS_SUFFIX = '-mods'
 const MODERATORS_LABEL = 'Moderators'
 const FULL_CATEGORY_PERMISSION = 1
 const MEMBERS_VISIBILITY_LEVEL = 2
-const DISCOURSE_API_USERNAME = 'system'
 
 interface DiscourseRecords {
   groupId: number
@@ -29,11 +29,6 @@ interface DiscourseNames {
   slug: string
   groupName: string
   moderatorsGroupName: string
-}
-
-interface DiscourseConfig {
-  domain: string
-  apiKey: string
 }
 
 async function getMemberIds(organizationId: string) {
@@ -212,72 +207,6 @@ function resolveNames(
   return { names }
 }
 
-async function discourseRequest(
-  { domain, apiKey }: DiscourseConfig,
-  method: string,
-  path: string,
-  body?: unknown,
-) {
-  const response = await fetch(`https://${domain}${path}`, {
-    method,
-    headers: {
-      'Api-Key': apiKey,
-      'Api-Username': DISCOURSE_API_USERNAME,
-      'Accept': 'application/json',
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-
-  const text = await response.text()
-  let payload: any = null
-
-  if (text) {
-    try {
-      payload = JSON.parse(text)
-    }
-    catch {
-      payload = null
-    }
-  }
-
-  return { response, payload }
-}
-
-function discourseError(path: string, response: Response, payload: any) {
-  const message = Array.isArray(payload?.errors)
-    ? payload.errors.join(' ')
-    : payload?.error ?? `responded ${response.status}`
-
-  return new Error(`Discourse ${path} ${message}`)
-}
-
-/** Sends a request that is expected to succeed, returning its parsed body. */
-async function send(config: DiscourseConfig, method: string, path: string, body?: unknown) {
-  const { response, payload } = await discourseRequest(config, method, path, body)
-
-  if (!response.ok) {
-    throw discourseError(path, response, payload)
-  }
-
-  return payload
-}
-
-/** Fetches a record, returning null when Discourse does not have one. */
-async function find(config: DiscourseConfig, path: string) {
-  const { response, payload } = await discourseRequest(config, 'GET', path)
-
-  if (response.status === 404) {
-    return null
-  }
-
-  if (!response.ok) {
-    throw discourseError(path, response, payload)
-  }
-
-  return payload
-}
-
 async function ensureGroup(config: DiscourseConfig, name: string, fullName: string) {
   const existing = await find(config, `/groups/${encodeURIComponent(name)}.json`)
 
@@ -349,6 +278,38 @@ async function provision(
   return { groupId, groupName, moderatorsGroupId, moderatorsGroupName, categoryId }
 }
 
+function role(group: DiscourseGroup | undefined, userId: string) {
+  if (group?.owners.includes(userId)) {
+    return 'owner'
+  }
+
+  return group?.members.includes(userId) ? 'member' : 'none'
+}
+
+function changedUsers(
+  before: Record<string, Group>,
+  after: Record<string, DiscourseGroup>,
+) {
+  const changed = new Set<string>()
+
+  for (const [name, group] of Object.entries(after)) {
+    if (!provisioned(group)) {
+      continue
+    }
+
+    // A group Discourse did not have yet has no memberships to compare against.
+    const saved = provisioned(before[name]) ? before[name] : undefined
+
+    for (const userId of [...group.owners, ...group.members, ...saved?.owners ?? [], ...saved?.members ?? []]) {
+      if (role(saved, userId) !== role(group, userId)) {
+        changed.add(userId)
+      }
+    }
+  }
+
+  return changed
+}
+
 async function handler(req: Request) {
   const caller = await authorize(req)
 
@@ -417,11 +378,10 @@ async function handler(req: Request) {
 
   const failures: string[] = []
   const stillTaken = new Map<string, string>()
+  const { domain } = organization.publicMetadata?.discourse ?? {}
+  const { apiKey, secret } = organization.privateMetadata?.discourse ?? {}
 
   if (newNames.length || removals.length) {
-    const { domain } = organization.publicMetadata?.discourse ?? {}
-    const { apiKey } = organization.privateMetadata?.discourse ?? {}
-
     if (!domain || !apiKey) {
       return json({ error: 'This organization is not connected to a Discourse server' }, 400)
     }
@@ -463,6 +423,30 @@ async function handler(req: Request) {
   }
 
   const groups = await saveGroups(caller, result.groups)
+
+  if (domain && apiKey && secret) {
+    const unsynced: string[] = []
+    let reason = ''
+
+    for (const userId of changedUsers(savedGroups, groups)) {
+      try {
+        await syncGroups({ domain, apiKey }, secret, groups, userId)
+      }
+      catch (syncError) {
+        unsynced.push(userId)
+        reason ||= syncError instanceof Error ? syncError.message : ''
+      }
+    }
+
+    if (unsynced.length) {
+      failures.push(
+        'Saved, but Discourse could not update the membership for '
+        + `${unsynced.length === 1 ? '1 person' : `${unsynced.length} people`}. `
+        + `They will be moved into the correct groups the next time they sign in.`
+        + `${reason ? ` Discourse said: ${reason}` : ''}`,
+      )
+    }
+  }
 
   if (failures.length) {
     return json({ error: failures.join(' '), groups }, 502)
