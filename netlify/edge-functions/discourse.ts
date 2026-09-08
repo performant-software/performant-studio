@@ -4,6 +4,7 @@ import type { Config } from '@netlify/edge-functions'
 import { Buffer } from 'node:buffer'
 import crypto from 'node:crypto'
 import { createClerkClient } from '@clerk/backend'
+import { signPayload, syncedGroups } from '../lib/discourse.ts'
 
 const clerkClient = createClerkClient({
   secretKey: Netlify.env.get('CLERK_SECRET_KEY'),
@@ -30,40 +31,12 @@ function verifyDiscoursePayload(sso: string, sig: string, secret: string) {
 }
 
 function buildResponseUrl(returnUrl: string, fields: Record<string, any>, secret: string) {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(fields)) {
-    if (value === undefined || value === null || value === '')
-      continue
-    params.set(key, String(value))
-  }
-
-  const payload = Buffer.from(params.toString(), 'utf8').toString('base64')
-  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex')
+  const { sso, sig } = signPayload(fields, secret)
 
   const url = new URL(returnUrl)
-  url.searchParams.set('sso', payload)
+  url.searchParams.set('sso', sso)
   url.searchParams.set('sig', sig)
   return url.toString()
-}
-
-function syncedGroups(publicMetadata: OrganizationPublicMetadata, userId: string) {
-  const add: string[] = []
-  const remove: string[] = []
-  const sync = (name: string, belongs: boolean) => (belongs ? add : remove).push(name)
-
-  for (const group of Object.values(publicMetadata.discourse?.groups ?? {})) {
-    if (!group.groupName || !group.moderatorsGroupName) {
-      continue
-    }
-
-    const isOwner = group.owners.includes(userId)
-
-    // Add owner to the regular member group too
-    sync(group.groupName, isOwner || group.members.includes(userId))
-    sync(group.moderatorsGroupName, isOwner)
-  }
-
-  return { add, remove }
 }
 
 async function handler(req: Request) {
@@ -160,7 +133,7 @@ async function handler(req: Request) {
     return Response.redirect(homeUrl)
   }
 
-  const { add, remove } = syncedGroups(publicMetadata, user.id)
+  const { add, remove } = syncedGroups(publicMetadata.discourse?.groups ?? {}, user.id)
 
   const redirectUrl = buildResponseUrl(
     returnUrl,

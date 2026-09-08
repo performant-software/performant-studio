@@ -1,5 +1,5 @@
 import type { Config } from '@netlify/edge-functions'
-import { authorize, canManage, clerkClient, errorMessage, json, saveGroups } from '../lib/discourse.ts'
+import { authorize, canManage, clerkClient, errorMessage, json, saveGroups, syncGroups } from '../lib/discourse.ts'
 
 const MEMBER_ROLE = 'org:member'
 
@@ -99,14 +99,30 @@ async function handler(req: Request) {
     }
   }
 
+  let groups = caller.savedGroups
+
   if (!group.owners.includes(user.id) && !group.members.includes(user.id)) {
-    await saveGroups(caller, {
+    groups = await saveGroups(caller, {
       ...caller.savedGroups,
       [name]: { ...group, members: [...group.members, user.id] },
     })
   }
 
-  return json({ userId: user.id, isNewUser })
+  const { domain } = caller.organization.publicMetadata?.discourse ?? {}
+  const { apiKey, secret } = caller.organization.privateMetadata?.discourse ?? {}
+
+  let isSynced = false
+
+  if (domain && apiKey && secret) {
+    try {
+      isSynced = await syncGroups({ domain, apiKey }, secret, groups, user.id)
+    }
+    catch {
+      isSynced = false
+    }
+  }
+
+  return json({ userId: user.id, isNewUser, isSynced })
 }
 
 export const config: Config = {
