@@ -5,6 +5,7 @@ import { isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
 import ConfirmDialog from './ConfirmDialog.tsx'
 import DiscourseGroupInvite from './DiscourseGroupInvite.tsx'
 import DiscourseGroupRoster from './DiscourseGroupRoster.tsx'
+import FloatingBar from './FloatingBar.tsx'
 
 type Groups = Record<string, DiscourseGroup>
 
@@ -43,20 +44,10 @@ function fingerprint(groups: Groups) {
 function toUsers(userIds: string[], usersById: Map<string, User>): User[] {
   return userIds.map(userId => usersById.get(userId) ?? {
     userId,
-    name: `${userId} (not in this organization)`,
+    name: userId,
+    email: 'Not in this organization',
     imageUrl: '',
   })
-}
-
-function displayName(user: { firstName?: string | null, lastName?: string | null, identifier?: string } = {}) {
-  const { firstName, lastName, identifier } = user
-  const fullName = [firstName, lastName].filter(Boolean).join(' ')
-
-  if (fullName && identifier) {
-    return `${fullName} (${identifier})`
-  }
-
-  return fullName || identifier || ''
 }
 
 export default function DiscourseGroups() {
@@ -88,11 +79,18 @@ export default function DiscourseGroups() {
 
   const users = useMemo(
     () => (memberships?.data ?? [])
-      .map(membership => ({
-        userId: membership.publicUserData?.userId,
-        name: displayName(membership.publicUserData),
-        imageUrl: membership.publicUserData?.imageUrl ?? '',
-      }))
+      .map((membership) => {
+        const { firstName, lastName, identifier = '' } = membership.publicUserData ?? {}
+        const fullName = [firstName, lastName].filter(Boolean).join(' ')
+
+        return {
+          userId: membership.publicUserData?.userId,
+          // Members without a name fall back to their email, so don't repeat it below.
+          name: fullName || identifier,
+          email: fullName ? identifier : '',
+          imageUrl: membership.publicUserData?.imageUrl ?? '',
+        }
+      })
       .filter((user): user is User => Boolean(user.userId))
       .sort((a, b) => a.name.localeCompare(b.name)),
     [memberships?.data],
@@ -217,9 +215,9 @@ export default function DiscourseGroups() {
                   <button
                     type="submit"
                     disabled={!draft.trim()}
-                    className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:cursor-pointer hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Add new group
+                    Create new group
                   </button>
                 </form>
               )}
@@ -239,36 +237,40 @@ export default function DiscourseGroups() {
                                   type="button"
                                   onClick={() => setPendingDelete(name)}
                                   aria-label={`Delete ${name}`}
-                                  className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
+                                  className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-semibold text-gray-600 transition-colors hover:cursor-pointer hover:border-red-300 hover:bg-red-50 hover:text-red-600"
                                 >
                                   Delete group
                                 </button>
                               )}
                             </div>
 
-                            <div className="bg-gray-100 p-4 rounded-md">
+                            <div className={`grid divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 ${
+                              isAdmin ? 'md:grid-cols-2 md:divide-x md:divide-y-0' : ''
+                            }`}
+                            >
+                              {isAdmin && (
+                                <DiscourseGroupRoster
+                                  group={name}
+                                  label="Owners"
+                                  singular="owner"
+                                  users={toUsers(owners, usersById)}
+                                  available={users.filter(candidate => !owners.includes(candidate.userId))}
+                                  onChange={userIds => setOwners(name, userIds)}
+                                />
+                              )}
+
                               <DiscourseGroupRoster
                                 group={name}
-                                label="Owners"
-                                singular="owner"
-                                users={toUsers(owners, usersById)}
-                                available={users.filter(candidate => !owners.includes(candidate.userId))}
-                                onChange={userIds => setOwners(name, userIds)}
-                                readOnly={!isAdmin}
+                                label="Members"
+                                singular="member"
+                                users={toUsers(members, usersById)}
+                                available={users.filter(
+                                  candidate => !members.includes(candidate.userId)
+                                    && !owners.includes(candidate.userId),
+                                )}
+                                onChange={userIds => setMembers(name, userIds)}
                               />
                             </div>
-
-                            <DiscourseGroupRoster
-                              group={name}
-                              label="Members"
-                              singular="member"
-                              users={toUsers(members, usersById)}
-                              available={users.filter(
-                                candidate => !members.includes(candidate.userId)
-                                  && !owners.includes(candidate.userId),
-                              )}
-                              onChange={userIds => setMembers(name, userIds)}
-                            />
 
                             <div className="flex flex-wrap items-center justify-end gap-3">
                               {isDirty && (
@@ -280,9 +282,9 @@ export default function DiscourseGroups() {
                                 type="button"
                                 onClick={() => setPendingInvite(name)}
                                 disabled={isDirty || isSaving}
-                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:cursor-pointer hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                               >
-                                Invite someone new
+                                Invite new account
                               </button>
                             </div>
                           </li>
@@ -298,15 +300,15 @@ export default function DiscourseGroups() {
 
               {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
 
-              <div className="flex w-full justify-end items-center gap-4">
-                {isDirty && !isSaving && (
+              <FloatingBar show={isDirty || isSaving} label="Unsaved changes">
+                {!isSaving && (
                   <button
                     type="button"
                     onClick={() => {
                       setGroups(savedGroups)
                       setError(null)
                     }}
-                    className="text-sm font-semibold text-gray-600 hover:underline"
+                    className="text-sm font-semibold text-gray-600 hover:cursor-pointer hover:underline"
                   >
                     Discard changes
                   </button>
@@ -314,12 +316,12 @@ export default function DiscourseGroups() {
                 <button
                   type="button"
                   onClick={() => void save()}
-                  disabled={!isDirty || isSaving}
-                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={isSaving}
+                  className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:cursor-pointer hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? 'Saving…' : 'Save changes'}
                 </button>
-              </div>
+              </FloatingBar>
 
               {!!pendingInvite && (
                 <DiscourseGroupInvite

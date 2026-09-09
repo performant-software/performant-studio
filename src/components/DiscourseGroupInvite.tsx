@@ -102,7 +102,7 @@ export default function DiscourseGroupInvite({ group, onInvited, onDismiss }: Di
     >
       <form onSubmit={invite} className="flex flex-col gap-5 p-6">
         <div className="flex flex-col gap-1">
-          <h2 id={titleId} className="text-lg font-semibold">Invite someone new</h2>
+          <h2 id={titleId} className="text-lg font-semibold">Invite new account</h2>
           <p className="text-[15px] text-gray-600">
             Invite a new user and add them to&nbsp;
             <strong className="font-semibold text-gray-900">{group}</strong>
@@ -136,14 +136,14 @@ export default function DiscourseGroupInvite({ group, onInvited, onDismiss }: Di
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:cursor-pointer hover:bg-gray-50"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isInviting || !isComplete}
-            className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:cursor-pointer hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isInviting ? 'Inviting…' : 'Invite'}
           </button>
