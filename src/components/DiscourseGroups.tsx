@@ -1,13 +1,16 @@
-import type { User } from './DiscourseGroupRoster.tsx'
+import type { User } from './UserIdentity.tsx'
 import { useAuth, useOrganization, useUser } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
+import { groupUrl, isDiscourse, ownedGroupNames } from '../lib/organizations.ts'
 import ConfirmDialog from './ConfirmDialog.tsx'
 import DiscourseGroupInvite from './DiscourseGroupInvite.tsx'
 import DiscourseGroupRoster from './DiscourseGroupRoster.tsx'
 import FloatingBar from './FloatingBar.tsx'
 
 type Groups = Record<string, DiscourseGroup>
+
+const OWNERS_DESCRIPTION = 'Owners are given moderator permissions on the Discourse community and can manage the list of members.'
+const MEMBERS_DESCRIPTION = 'Members can view and participate in the Discourse community.'
 
 function toGroups(saved: Groups | undefined): Groups {
   return Object.fromEntries(
@@ -188,13 +191,18 @@ export default function DiscourseGroups() {
 
   const groupNames = useMemo(() => Object.keys(groups), [groups])
 
+  // Inviting reloads the organization, which would throw away unsaved edits.
+  const inviteDisabledReason = isDirty || isSaving
+    ? 'Save or discard your changes first'
+    : undefined
+
   return (
     <div className="flex flex-col gap-6">
       { organization && isDiscourse(organization)
         ? (
             <>
               <div>
-                <h2 className="text-lg font-semibold">Groups</h2>
+                <h2 className="text-lg font-semibold">Discourse communities</h2>
                 <p className="mt-1 text-[15px] text-gray-600">
                   {isAdmin
                     ? 'Add and manage communities for your organization\'s Discourse site.'
@@ -208,8 +216,8 @@ export default function DiscourseGroups() {
                     type="text"
                     value={draft}
                     onChange={event => setDraft(event.target.value)}
-                    placeholder="New group name"
-                    aria-label="New group name"
+                    placeholder="New community name"
+                    aria-label="New community name"
                     className="min-w-64 rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant"
                   />
                   <button
@@ -217,7 +225,7 @@ export default function DiscourseGroups() {
                     disabled={!draft.trim()}
                     className="rounded-md bg-performant px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:cursor-pointer hover:bg-performant/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Create new group
+                    Create new community
                   </button>
                 </form>
               )}
@@ -226,32 +234,51 @@ export default function DiscourseGroups() {
                 ? (
                     <ul className="flex flex-col gap-4">
                       {groupNames.map((name) => {
-                        const { owners, members } = groups[name]
+                        const { owners, members, categoryId } = groups[name]
+
+                        // Groups that have not been saved yet have no category to link to.
+                        const url = categoryId ? groupUrl(organization, name) : null
 
                         return (
                           <li key={name} className="flex flex-col gap-5 rounded-xl bg-white px-5 py-4 shadow-sm">
                             <div className="flex items-center justify-between gap-4">
                               <span className="text-xl font-semibold">{name}</span>
-                              {isAdmin && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDelete(name)}
-                                  aria-label={`Delete ${name}`}
-                                  className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-semibold text-gray-600 transition-colors hover:cursor-pointer hover:border-red-300 hover:bg-red-50 hover:text-red-600"
-                                >
-                                  Delete group
-                                </button>
-                              )}
+                              <span className="flex shrink-0 items-center gap-2">
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingDelete(name)}
+                                    aria-label={`Delete ${name}`}
+                                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-semibold text-gray-600 transition-colors hover:cursor-pointer hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                                  >
+                                    Delete community
+                                  </button>
+                                )}
+                                {url && (
+                                  <a
+                                    href={url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    aria-label={`View ${name} in Discourse`}
+                                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm font-semibold text-gray-600 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-900"
+                                  >
+                                    View in Discourse
+                                  </a>
+                                )}
+                              </span>
                             </div>
 
-                            <div className={`grid divide-y divide-gray-200 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 ${
-                              isAdmin ? 'md:grid-cols-2 md:divide-x md:divide-y-0' : ''
+                            <div className={`grid divide-y divide-gray-200 rounded-lg border border-gray-200 bg-gray-50 ${
+                              isAdmin
+                                ? 'md:grid-cols-2 md:grid-rows-[auto_auto_1fr] md:divide-x md:divide-y-0 md:*:row-span-3 md:*:grid md:*:grid-rows-subgrid'
+                                : ''
                             }`}
                             >
                               {isAdmin && (
                                 <DiscourseGroupRoster
                                   group={name}
                                   label="Owners"
+                                  description={OWNERS_DESCRIPTION}
                                   singular="owner"
                                   users={toUsers(owners, usersById)}
                                   available={users.filter(candidate => !owners.includes(candidate.userId))}
@@ -262,6 +289,7 @@ export default function DiscourseGroups() {
                               <DiscourseGroupRoster
                                 group={name}
                                 label="Members"
+                                description={MEMBERS_DESCRIPTION}
                                 singular="member"
                                 users={toUsers(members, usersById)}
                                 available={users.filter(
@@ -269,23 +297,9 @@ export default function DiscourseGroups() {
                                     && !owners.includes(candidate.userId),
                                 )}
                                 onChange={userIds => setMembers(name, userIds)}
+                                onInvite={() => setPendingInvite(name)}
+                                inviteDisabledReason={inviteDisabledReason}
                               />
-                            </div>
-
-                            <div className="flex flex-wrap items-center justify-end gap-3">
-                              {isDirty && (
-                                <span className="text-sm text-gray-600">
-                                  Save or discard your changes before inviting someone.
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setPendingInvite(name)}
-                                disabled={isDirty || isSaving}
-                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:cursor-pointer hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                Invite new account
-                              </button>
                             </div>
                           </li>
                         )
@@ -308,7 +322,7 @@ export default function DiscourseGroups() {
                       setGroups(savedGroups)
                       setError(null)
                     }}
-                    className="text-sm font-semibold text-gray-600 hover:cursor-pointer hover:underline"
+                    className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:cursor-pointer hover:bg-gray-50"
                   >
                     Discard changes
                   </button>
@@ -335,6 +349,7 @@ export default function DiscourseGroups() {
                 <ConfirmDialog
                   title="Delete group"
                   confirmLabel="Delete group"
+                  confirmPhrase={pendingDelete}
                   onConfirm={() => removeGroup(pendingDelete)}
                   onDismiss={() => setPendingDelete(null)}
                 >
