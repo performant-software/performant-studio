@@ -59,7 +59,7 @@ export default function AppGrid() {
     if (discourseDomain) {
       const href = new URL('/session/sso', `https://${discourseDomain}`)
 
-      // if admin
+      // redirect admins to categories listing instead of specific category
       if (orgStatus.membership?.role === 'org:admin') {
         href.searchParams.set('return_path', `/categories`)
       }
