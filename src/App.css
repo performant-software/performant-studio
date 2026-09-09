@@ -2,4 +2,36 @@
 
 @theme {
   --color-performant: #F15F26;
+
+  --animate-fade-in-up: fade-in-up 200ms ease-out;
+  --animate-fade-out-down: fade-out-down 150ms ease-in forwards;
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-out-down {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(0.75rem);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-out-down {
+    animation-duration: 1ms;
+  }
 }

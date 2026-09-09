@@ -77,7 +77,7 @@ export default function AppGrid() {
     }
 
     if (canManageGroups) {
-      result.push({ label: 'Manage groups', href: '/discourse' })
+      result.push({ label: 'Manage communities', href: '/discourse' })
     }
 
     return result
