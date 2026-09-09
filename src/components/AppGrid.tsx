@@ -15,7 +15,7 @@ const APPS = [
     }],
   },
   {
-    name: 'FairCopy Cloud',
+    name: 'FairCopy',
     description: 'Mark up your text documents with identifiers from FairData.',
     icon: '/icons/faircopy.svg',
     links: [{
