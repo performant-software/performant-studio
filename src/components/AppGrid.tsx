@@ -1,6 +1,6 @@
 import type { AppCardLink } from './AppCard.tsx'
 import { useOrganization, useUser } from '@clerk/react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { ownedGroupNames } from '../lib/organizations.ts'
 import AppCard from './AppCard.tsx'
 
@@ -31,6 +31,22 @@ export default function AppGrid() {
 
   const discourseDomain = orgStatus.organization?.publicMetadata?.discourse?.domain
 
+  // get the first (and most likely only) Discourse group the user is in
+  const getFirstUserGroup = useCallback(() => {
+    if (!user?.id) {
+      return null
+    }
+
+    const discourseMeta = orgStatus.organization?.publicMetadata?.discourse
+
+    if (discourseMeta?.groups) {
+      return Object.values(discourseMeta.groups)
+        .find(group => group.members.includes(user.id))
+    }
+
+    return null
+  }, [orgStatus.organization?.publicMetadata?.discourse, user?.id])
+
   const canManageGroups = useMemo(() => {
     if (!discourseDomain) {
       return false
@@ -44,7 +60,20 @@ export default function AppGrid() {
     const result: AppCardLink[] = []
 
     if (discourseDomain) {
-      result.push({ label: 'Open', href: `https://${discourseDomain}` })
+      const href = new URL('/session/sso', `https://${discourseDomain}`)
+
+      // redirect admins to categories listing instead of specific category
+      if (orgStatus.membership?.role === 'org:admin') {
+        href.searchParams.set('return_path', `/categories`)
+      }
+      else {
+        const userGroup = getFirstUserGroup()
+        if (userGroup) {
+          href.searchParams.set('return_path', `/c/${userGroup.groupName}`)
+        }
+      }
+
+      result.push({ label: 'Open', href: href.toString() })
     }
 
     if (canManageGroups) {
@@ -52,7 +81,7 @@ export default function AppGrid() {
     }
 
     return result
-  }, [canManageGroups, discourseDomain])
+  }, [canManageGroups, discourseDomain, getFirstUserGroup, orgStatus.membership?.role])
 
   return (
     <section>
