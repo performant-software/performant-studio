@@ -9,16 +9,19 @@ const APPS = [
     name: 'FairData',
     description: 'Model, create and manage data about People, Places, Events, and relate them together.',
     icon: '/icons/fairdata.svg',
+    links: [{
+      label: 'Open',
+      href: import.meta.env.VITE_FAIRDATA_URL,
+    }],
   },
   {
     name: 'FairCopy Cloud',
     description: 'Mark up your text documents with identifiers from FairData.',
     icon: '/icons/faircopy.svg',
-  },
-  {
-    name: 'FairImage',
-    description: 'Upload media and use them in IIIF manifests.',
-    icon: '/icons/fairimage.svg',
+    links: [{
+      label: 'Open',
+      href: import.meta.env.VITE_FAIRCOPY_SERVER_URL,
+    }],
   },
 ]
 
