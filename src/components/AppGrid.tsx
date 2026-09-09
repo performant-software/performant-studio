@@ -1,6 +1,6 @@
 import type { AppCardLink } from './AppCard.tsx'
 import { useOrganization, useUser } from '@clerk/react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { ownedGroupNames } from '../lib/organizations.ts'
 import AppCard from './AppCard.tsx'
 
@@ -29,7 +29,7 @@ export default function AppGrid() {
   const discourseDomain = orgStatus.organization?.publicMetadata?.discourse?.domain
 
   // get the first (and most likely only) Discourse group the user is in
-  const userGroup = useMemo(() => {
+  const getFirstUserGroup = useCallback(() => {
     if (!user?.id) {
       return null
     }
@@ -59,8 +59,15 @@ export default function AppGrid() {
     if (discourseDomain) {
       const href = new URL('/session/sso', `https://${discourseDomain}`)
 
-      if (userGroup) {
-        href.searchParams.set('return_path', `/c/${userGroup.groupName}`)
+      // if admin
+      if (orgStatus.membership?.role === 'org:admin') {
+        href.searchParams.set('return_path', `/categories`)
+      }
+      else {
+        const userGroup = getFirstUserGroup()
+        if (userGroup) {
+          href.searchParams.set('return_path', `/c/${userGroup.groupName}`)
+        }
       }
 
       result.push({ label: 'Open', href: href.toString() })
@@ -71,7 +78,7 @@ export default function AppGrid() {
     }
 
     return result
-  }, [canManageGroups, discourseDomain, userGroup])
+  }, [canManageGroups, discourseDomain, getFirstUserGroup, orgStatus.membership?.role])
 
   return (
     <section>
