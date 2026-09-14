@@ -1,55 +1,49 @@
+import type { User } from './UserIdentity.tsx'
 import { useMemo } from 'react'
-
-export interface User {
-  userId: string
-  name: string
-  imageUrl: string
-}
+import UserCombobox from './UserCombobox.tsx'
+import UserIdentity from './UserIdentity.tsx'
 
 interface DiscourseGroupRosterProps {
   group: string
   label: string
+  description?: string
   singular: string
   users: User[]
   available: User[]
   onChange: (userIds: string[]) => void
-  readOnly?: boolean
+  onInvite?: () => void
+  inviteDisabledReason?: string
 }
 
 export default function DiscourseGroupRoster({
   group,
   label,
+  description,
   singular,
   users,
   available,
   onChange,
-  readOnly = false,
+  onInvite,
+  inviteDisabledReason,
 }: DiscourseGroupRosterProps) {
-  const selectId = `${group}-${singular}`
-
   const userIds = useMemo(() => users.map(user => user.userId), [users])
 
   return (
-    <div className="flex flex-col gap-2 text-lg">
-      <label htmlFor={selectId} className="font-semibold text-gray-700">
-        {label}
-      </label>
-      {!readOnly && (
-        <select
-          id={selectId}
-          value=""
-          disabled={!available.length}
-          onChange={event => onChange([...userIds, event.target.value])}
-          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-[15px] focus:border-performant focus:outline-none focus:ring-1 focus:ring-performant disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="" disabled>
-            {available.length ? `Add ${singular}…` : 'Everyone added'}
-          </option>
-          {available.map(user => (
-            <option key={user.userId} value={user.userId}>{user.name}</option>
-          ))}
-        </select>
-      )}
+    <div className="flex h-full min-w-0 flex-col gap-3 p-4 text-sm">
+      <div className="flex flex-col gap-1">
+        <h3 className="text-lg font-bold tracking-wide text-gray-800">
+          {label}
+        </h3>
+        {description && <p className="text-sm text-gray-600">{description}</p>}
+      </div>
+      <UserCombobox
+        label={`Add ${singular} to ${group}`}
+        placeholder="Search users"
+        users={available}
+        onSelect={userId => onChange([...userIds, userId])}
+        onInvite={onInvite}
+        inviteDisabledReason={inviteDisabledReason}
+      />
 
       {users.length
         ? (
@@ -57,31 +51,21 @@ export default function DiscourseGroupRoster({
               {users.map((user) => {
                 return (
                   <li key={user.userId} className="flex items-center justify-between gap-3 py-2">
-                    <span className="flex items-center gap-4">
-                      {user.imageUrl
-                        ? <img src={user.imageUrl} alt="" className="size-6 shrink-0 rounded-full object-cover" />
-                        : <span aria-hidden="true" className="size-6 shrink-0 rounded-full bg-gray-200" />}
-                      <span className={user.imageUrl ? undefined : 'text-gray-500 italic'}>
-                        {user.name}
-                      </span>
-                    </span>
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={() => onChange(userIds.filter(id => id !== user.userId))}
-                        aria-label={`Remove ${user.name} from ${label.toLowerCase()} of ${group}`}
-                        className="text-sm font-semibold text-gray-500 transition-colors hover:text-red-600 hover:cursor-pointer"
-                      >
-                        Remove
-                      </button>
-                    )}
+                    <UserIdentity user={user} />
+                    <button
+                      type="button"
+                      onClick={() => onChange(userIds.filter(id => id !== user.userId))}
+                      aria-label={`Remove ${user.name} from ${label.toLowerCase()} of ${group}`}
+                      className="shrink-0 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-600 transition-colors hover:cursor-pointer hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                    >
+                      Remove
+                    </button>
                   </li>
                 )
               })}
             </ul>
           )
-        : <p className=" text-gray-600">{`No ${label.toLowerCase()} yet.`}</p>}
-
+        : <p className="text-gray-500">{`No ${label.toLowerCase()} yet.`}</p>}
     </div>
   )
 }

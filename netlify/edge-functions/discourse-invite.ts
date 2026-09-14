@@ -60,7 +60,6 @@ async function handler(req: Request) {
   }
 
   let user = await findUserByEmail(email)
-  const isNewUser = !user
 
   if (!user) {
     if (!firstName || !lastName) {
@@ -111,18 +110,16 @@ async function handler(req: Request) {
   const { domain } = caller.organization.publicMetadata?.discourse ?? {}
   const { apiKey, secret } = caller.organization.privateMetadata?.discourse ?? {}
 
-  let isSynced = false
-
   if (domain && apiKey && secret) {
     try {
-      isSynced = await syncGroups({ domain, apiKey }, secret, groups, user.id)
+      await syncGroups({ domain, apiKey }, secret, groups, user.id)
     }
     catch {
-      isSynced = false
+      // They will be moved into the correct groups the next time they sign in.
     }
   }
 
-  return json({ userId: user.id, isNewUser, isSynced })
+  return json({ userId: user.id })
 }
 
 export const config: Config = {
