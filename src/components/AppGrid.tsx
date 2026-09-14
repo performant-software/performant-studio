@@ -16,7 +16,7 @@ const APPS = [
   },
   {
     name: 'FairCopy',
-    description: 'Mark up your text documents with identifiers from FairData.',
+    description: 'Mark up, structure, and semantically encode documents using the Text Encoding Initiative Guidelines.',
     icon: '/icons/faircopy.svg',
     links: [{
       label: 'Open',
